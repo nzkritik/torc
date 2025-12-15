@@ -118,3 +118,56 @@ at your option.
 ## Target Platforms
 
 Currently targeting Arch-based and Debian-based Linux distributions with plans to expand to other major Linux distributions.
+
+## TODO List
+
+### Core Functionality
+- [ ] Implement actual system-wide traffic routing through Tor (currently only starts Tor service)
+- [ ] Configure iptables rules to redirect all traffic through Tor SOCKS proxy
+- [ ] Implement proper DNS leak protection
+- [ ] Add connection status verification that checks if traffic is actually routed through Tor
+- [ ] Implement circuit monitoring to show active Tor circuits
+- [ ] Add proxy authentication support if needed
+
+### Security & Privacy
+- [ ] Implement proper cleanup of DNS cache on connection/disconnection
+- [ ] Add support for Tor Browser integration
+- [ ] Implement MAC address spoofing for additional anonymity
+- [ ] Add detection for Tor blocking/interference
+- [ ] Implement anti-fingerprinting measures
+
+### System Integration
+- [ ] Create proper systemd service for the application itself
+- [ ] Add integration with NetworkManager for better network management
+- [ ] Implement automatic restart on system boot (when configured)
+- [ ] Add support for multiple Tor configurations/profiles
+- [ ] Implement proper logging system
+
+### Backup & Restore System
+- [ ] Implement actual network configuration restoration (currently uses placeholder functions)
+- [ ] Add backup of routing table with `ip route` commands
+- [ ] Add backup of DNS configuration in `/etc/resolv.conf`
+- [ ] Add backup of firewall rules with `iptables` commands
+- [ ] Add backup of network interface states
+- [ ] Implement restore functionality for all backed up configurations
+
+### Platform Support
+- [ ] Add support for other major Linux distributions (Fedora, openSUSE, etc.)
+- [ ] Create installation scripts for other package managers (dnf, zypper, etc.)
+- [ ] Add macOS support (requires significant architecture changes)
+- [ ] Add support for containerized environments
+
+### User Experience
+- [ ] Add more detailed status information showing exit node location
+- [ ] Implement bandwidth monitoring
+- [ ] Add configuration file support for custom settings
+- [ ] Create desktop notification system for connection status changes
+- [ ] Add support for selecting specific Tor circuits or exit nodes
+- [ ] Implement kill switch functionality to block all traffic if Tor connection drops
+
+### Testing & Quality
+- [ ] Add comprehensive unit tests for all functionality
+- [ ] Create integration tests for the network configuration changes
+- [ ] Implement automated testing for different Linux distributions
+- [ ] Add performance monitoring and benchmarking
+- [ ] Create security testing framework
