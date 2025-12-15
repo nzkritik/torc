@@ -1,12 +1,16 @@
 # TORC - Tor Network Connector
 
-```                                       
-▄▄▄▄▄▄▄▄▄   ▄▄▄▄▄   ▄▄▄▄▄▄▄    ▄▄▄▄▄▄▄ 
-▀▀▀███▀▀▀ ▄███████▄ ███▀▀███▄ ███▀▀▀▀▀ 
-   ███    ███   ███ ███▄▄███▀ ███      
-   ███    ███▄▄▄███ ███▀▀██▄  ███      
-   ███     ▀█████▀  ███  ▀███ ▀███████ 
-                                                                              
+⚠️ **UNDER DEVELOPMENT - NOT READY FOR USE** ⚠️
+
+**This application is currently under development and contains known issues. DO NOT use this software until it is explicitly marked as ready for testing. The current implementation does not properly route system traffic through Tor, meaning your IP address may not be hidden despite status messages indicating a connection.**
+
+```
+▄▄▄▄▄▄▄▄▄   ▄▄▄▄▄   ▄▄▄▄▄▄▄    ▄▄▄▄▄▄▄
+▀▀▀███▀▀▀ ▄███████▄ ███▀▀███▄ ███▀▀▀▀▀
+   ███    ███   ███ ███▄▄███▀ ███
+   ███    ███▄▄▄███ ███▀▀██▄  ███
+   ███     ▀█████▀  ███  ▀███ ▀███████
+
 ```
 
 TORC is a Rust CLI application that allows you to safely connect your system to the Tor network for anonymous browsing. The application provides a simple menu-driven interface to connect, disconnect, and check the status of your Tor connection.
@@ -27,7 +31,24 @@ TORC is a Rust CLI application that allows you to safely connect your system to 
   - On Arch Linux: `sudo pacman -S tor`
   - On Ubuntu/Debian: `sudo apt install tor`
 
-### Building from Source
+### Automatic Installation
+
+The repository includes platform-specific installation scripts:
+
+- For Arch-based distributions: Use `archlinux/install.sh`
+- For Debian-based distributions: Use `debian/install.sh`
+
+Run the appropriate script to automatically install all dependencies and build the application:
+
+```bash
+# For Arch-based systems
+./archlinux/install.sh
+
+# For Debian-based systems
+./debian/install.sh
+```
+
+### Building from Source (Manual)
 
 ```bash
 # Clone the repository
@@ -96,4 +117,4 @@ at your option.
 
 ## Target Platforms
 
-Initially targeting Arch Linux with plans to expand to other major Linux distributions.
+Currently targeting Arch-based and Debian-based Linux distributions with plans to expand to other major Linux distributions.

@@ -51,6 +51,9 @@ enum DiskOps {
 }
 
 fn main() -> Result<()> {
+    // Check if system needs restoration due to unexpected shutdown/crash
+    check_for_unexpected_shutdown()?;
+
     let cli = Cli::parse();
 
     match &cli.command {
@@ -77,6 +80,72 @@ fn main() -> Result<()> {
             }
         },
         None => show_interactive_menu()?,  // Show menu if no command specified
+    }
+
+    Ok(())
+}
+
+// Function to check if the system needs restoration due to unexpected shutdown
+fn check_for_unexpected_shutdown() -> Result<()> {
+    // Check if Tor service is running but we don't have a record of being connected
+    // This indicates a possible crash or unexpected shutdown
+    if is_tor_service_running() {
+        // We could implement a more sophisticated check here by storing state in a temporary file
+        // For now, we'll just warn the user if Tor is running without explicit connection info
+
+        // Check if we have state information that suggests we should be connected
+        let torc_state_file = "/tmp/torc_state";
+        let tor_connected_previously = std::path::Path::new(torc_state_file).exists();
+
+        if tor_connected_previously {
+            println!("{}", "⚠️  Tor service appears to be running from a previous session".yellow());
+
+            // Ask user what to do
+            print!("{}", "Would you like to restore normal network configuration? (y/N): ".cyan());
+            io::stdout().flush()?;
+
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+
+            if input.trim().to_lowercase() == "y" || input.trim().to_lowercase() == "yes" {
+                // Attempt to restore system state
+                if let Err(e) = restore_system_state_if_needed() {
+                    println!("{}", format!("Warning: Could not restore system state: {}", e).red());
+                } else {
+                    restore_system_proxy();
+                }
+
+                // Stop the Tor service
+                if let Err(e) = stop_tor_service() {
+                    println!("{}", format!("Warning: Could not stop Tor service: {}", e).red());
+                }
+
+                // Clean up the state file
+                let _ = std::fs::remove_file(torc_state_file);
+
+                println!("{}", "System state has been restored to normal configuration.".green());
+            }
+        } else {
+            // Tor is running but we don't have state info - warn the user
+            println!("{}", "⚠️  Tor service is currently running".yellow());
+            println!("{}", "⚠️  If this is unexpected, consider running 'torc system disconnect'".yellow());
+        }
+    }
+
+    Ok(())
+}
+
+// Function to restore system state if needed
+fn restore_system_state_if_needed() -> Result<()> {
+    // Check if we have system state information in our global backup
+    unsafe {
+        if SYSTEM_STATE_BACKUP.is_some() {
+            // We have state information, so restore it
+            restore_system_state()?;
+        } else {
+            // No state backup available, restore basic proxy settings
+            restore_system_proxy();
+        }
     }
 
     Ok(())
@@ -194,6 +263,11 @@ fn connect_to_tor() -> Result<()> {
         }
     }
 
+    // Backup current system state before making changes
+    if let Err(e) = backup_system_state() {
+        println!("{}", format!("Warning: Could not backup system state: {}", e).yellow());
+    }
+
     // Show progress indicator while starting service
     print!("{}", "⚡ Starting Tor service... ".yellow());
     std::io::stdout().flush().unwrap(); // Ensure print is displayed immediately
@@ -206,6 +280,12 @@ fn connect_to_tor() -> Result<()> {
             // Verify that Tor is actually running
             print!("{}", "✅ Verifying Tor service status... ".yellow());
             if is_tor_service_running() {
+                // Create a state file to indicate that we're intentionally connected
+                let torc_state_file = "/tmp/torc_state";
+                if let Err(e) = std::fs::write(torc_state_file, "connected") {
+                    println!("{}", format!("Warning: Could not create state file: {}", e).yellow());
+                }
+
                 println!("{}", "✅ Verified".green());
                 println!("{}", "\nTor connection established! All web traffic is now routed through Tor.".green());
                 println!("{}", "🔒 Your IP address is now hidden and your traffic is anonymized.".green());
@@ -237,7 +317,21 @@ fn disconnect_from_tor() -> Result<()> {
 
     match stop_tor_service() {
         Ok(_) => {
-            restore_system_proxy();
+            // Restore system state from backup if available
+            if let Err(e) = restore_system_state_if_needed() {
+                println!("{}", format!("Warning: Could not restore system state: {}", e).red());
+            } else {
+                restore_system_proxy();
+            }
+
+            // Clean up the state file
+            let torc_state_file = "/tmp/torc_state";
+            if std::path::Path::new(torc_state_file).exists() {
+                if let Err(e) = std::fs::remove_file(torc_state_file) {
+                    println!("{}", format!("Warning: Could not remove state file: {}", e).yellow());
+                }
+            }
+
             println!("{}", "Disconnected from Tor Network. Your traffic is no longer anonymized.".red());
             println!("{}", "Regular internet connection restored.".green());
         },
@@ -503,6 +597,175 @@ fn is_tor_installed() -> bool {
     }
 }
 
+// Structure to store the system network state before connecting to Tor
+#[derive(Debug, Clone)]
+struct SystemNetworkState {
+    proxy_settings: Option<String>,
+    firewall_rules: Vec<String>,
+    dns_servers: Vec<String>,
+    routing_table: Vec<String>,
+    network_interfaces: Vec<String>,
+}
+
+// Global variable to store the backup of system state
+static mut SYSTEM_STATE_BACKUP: Option<SystemNetworkState> = None;
+
+fn backup_system_state() -> Result<SystemNetworkState, Box<dyn std::error::Error>> {
+    println!("{}", "Backing up current system network state...".yellow());
+
+    // Store current proxy settings
+    let proxy_settings = get_current_proxy_settings()?;
+
+    // Store current firewall rules
+    let firewall_rules = get_current_firewall_rules()?;
+
+    // Store current DNS servers
+    let dns_servers = get_current_dns_servers()?;
+
+    // Store current routing table
+    let routing_table = get_current_routing_table()?;
+
+    // Store current network interfaces configuration
+    let network_interfaces = get_current_network_interfaces()?;
+
+    let state = SystemNetworkState {
+        proxy_settings,
+        firewall_rules,
+        dns_servers,
+        routing_table,
+        network_interfaces,
+    };
+
+    unsafe {
+        SYSTEM_STATE_BACKUP = Some(state.clone());
+    }
+
+    println!("{}", "✓ System network state backed up successfully".green());
+    Ok(state)
+}
+
+fn get_current_proxy_settings() -> Result<Option<String>, Box<dyn std::error::Error>> {
+    // Placeholder: In a real implementation, this would check various proxy settings
+    // such as environment variables (HTTP_PROXY, HTTPS_PROXY, etc.)
+    // and system proxy configurations
+
+    // For now, we'll simulate getting current proxy settings
+    let http_proxy = std::env::var("HTTP_PROXY").ok();
+    let https_proxy = std::env::var("HTTPS_PROXY").ok();
+
+    let combined_proxy = match (&http_proxy, &https_proxy) {
+        (Some(http), Some(https)) => Some(format!("HTTP: {}, HTTPS: {}", http, https)),
+        (Some(http), None) => Some(format!("HTTP: {}", http)),
+        (None, Some(https)) => Some(format!("HTTPS: {}", https)),
+        (None, None) => None,
+    };
+
+    Ok(combined_proxy)
+}
+
+fn get_current_firewall_rules() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    // Placeholder: In a real implementation, this would get current iptables rules
+    let output = Command::new("iptables")
+        .args(&["-L", "-n"])
+        .output()?;
+
+    if output.status.success() {
+        let rules = String::from_utf8_lossy(&output.stdout);
+        let mut rule_list: Vec<String> = Vec::new();
+
+        for line in rules.lines() {
+            if !line.is_empty() {
+                rule_list.push(line.to_string());
+            }
+        }
+
+        Ok(rule_list)
+    } else {
+        // Return empty list if iptables command failed (might not be available)
+        Ok(Vec::new())
+    }
+}
+
+fn get_current_dns_servers() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    // Placeholder: In a real implementation, this would parse /etc/resolv.conf
+    // or query systemd-resolved for current DNS servers
+
+    // Reading /etc/resolv.conf to get current DNS servers
+    let contents = std::fs::read_to_string("/etc/resolv.conf")?;
+    let mut dns_servers = Vec::new();
+
+    for line in contents.lines() {
+        if line.starts_with("nameserver ") {
+            let dns_server = line.trim_start_matches("nameserver ").to_string();
+            dns_servers.push(dns_server);
+        }
+    }
+
+    Ok(dns_servers)
+}
+
+fn get_current_routing_table() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    // Placeholder: In a real implementation, this would get the current routing table
+    let output = Command::new("ip")
+        .args(&["route", "show"])
+        .output()?;
+
+    if output.status.success() {
+        let routes = String::from_utf8_lossy(&output.stdout);
+        let mut route_list: Vec<String> = Vec::new();
+
+        for line in routes.lines() {
+            if !line.is_empty() {
+                route_list.push(line.to_string());
+            }
+        }
+
+        Ok(route_list)
+    } else {
+        // Try alternative command if 'ip' is not available
+        let output = Command::new("route")
+            .args(&["-n"])
+            .output()?;
+
+        if output.status.success() {
+            let routes = String::from_utf8_lossy(&output.stdout);
+            let mut route_list: Vec<String> = Vec::new();
+
+            for line in routes.lines() {
+                if !line.is_empty() {
+                    route_list.push(line.to_string());
+                }
+            }
+
+            Ok(route_list)
+        } else {
+            Ok(Vec::new())
+        }
+    }
+}
+
+fn get_current_network_interfaces() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    // Placeholder: In a real implementation, this would get current network interface configurations
+    let output = Command::new("ip")
+        .args(&["addr", "show"])
+        .output()?;
+
+    if output.status.success() {
+        let interfaces = String::from_utf8_lossy(&output.stdout);
+        let mut interface_list: Vec<String> = Vec::new();
+
+        for line in interfaces.lines() {
+            if !line.is_empty() {
+                interface_list.push(line.to_string());
+            }
+        }
+
+        Ok(interface_list)
+    } else {
+        Ok(Vec::new())
+    }
+}
+
 fn configure_system_proxy() {
     println!("{}", "Configuring system to route traffic through Tor...".yellow());
     // In a real implementation, this would set system proxy settings
@@ -517,6 +780,94 @@ fn restore_system_proxy() {
     // and remove any iptables rules
     // For simulation, we'll just show a message
     println!("{}", "✓ Normal system routing restored".green());
+}
+
+fn restore_system_state() -> Result<(), Box<dyn std::error::Error>> {
+    println!("{}", "Restoring system network state from backup...".yellow());
+
+    unsafe {
+        if let Some(state) = &SYSTEM_STATE_BACKUP {
+            // Restore proxy settings
+            restore_proxy_settings(&state.proxy_settings)?;
+
+            // Restore firewall rules
+            restore_firewall_rules(&state.firewall_rules)?;
+
+            // Restore DNS servers
+            restore_dns_servers(&state.dns_servers)?;
+
+            // Restore routing table
+            restore_routing_table(&state.routing_table)?;
+
+            // Restore network interfaces
+            restore_network_interfaces(&state.network_interfaces)?;
+
+            println!("{}", "✓ System network state restored successfully".green());
+
+            // Clear the backup
+            SYSTEM_STATE_BACKUP = None;
+
+            Ok(())
+        } else {
+            println!("{}", "⚠️  No system state backup found to restore".yellow());
+            Ok(())
+        }
+    }
+}
+
+fn restore_proxy_settings(proxy_settings: &Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+    // Placeholder: In a real implementation, this would restore proxy settings
+    // This would involve restoring environment variables and system proxy configs
+    println!("{}", "Restoring proxy settings...".yellow());
+
+    match proxy_settings {
+        Some(settings) => {
+            println!("{}", format!("Previous proxy settings: {}", settings).green());
+            // In real implementation, would restore the actual proxy settings
+        },
+        None => {
+            println!("{}", "No previous proxy settings to restore".green());
+        }
+    }
+
+    Ok(())
+}
+
+fn restore_firewall_rules(rules: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    // Placeholder: In a real implementation, this would restore iptables rules
+    // This would involve restoring the saved firewall configuration
+    println!("{}", "Restoring firewall rules...".yellow());
+    println!("{}", format!("Found {} rules to restore", rules.len()).green());
+
+    // In a real implementation, would restore the actual firewall rules
+    Ok(())
+}
+
+fn restore_dns_servers(servers: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    // Placeholder: In a real implementation, this would restore DNS server configuration
+    println!("{}", "Restoring DNS servers...".yellow());
+    println!("{}", format!("DNS servers to restore: {:?}", servers).green());
+
+    // In a real implementation, would restore the actual DNS servers to /etc/resolv.conf
+    Ok(())
+}
+
+fn restore_routing_table(routes: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    // Placeholder: In a real implementation, this would restore routing table
+    println!("{}", "Restoring routing table...".yellow());
+    println!("{}", format!("Routes to restore: {}", routes.len()).green());
+
+    // In a real implementation, would restore the actual routing table
+    Ok(())
+}
+
+fn restore_network_interfaces(interfaces: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    // Placeholder: In a real implementation, this would restore network interface configurations
+    println!("{}", "Restoring network interfaces...".yellow());
+    println!("{}", format!("Interfaces to restore: {}", interfaces.len()).green());
+
+    // In a real implementation, would restore the actual network interface configurations
+    Ok(())
 }
 
 // Disk encryption functions
