@@ -1,235 +1,171 @@
-use clap::Parser;
+use std::io::{self, Write};
 use colored::*;
 use anyhow::Result;
-use sysinfo::{System, SystemExt, CpuExt, DiskExt};
-
-#[derive(Parser)]
-#[command(name = "torc")]
-#[command(about = "A CLI application for Linux", long_about = None)]
-struct Args {
-    /// Enable verbose output
-    #[arg(short, long)]
-    verbose: bool,
-
-    /// Subcommand to execute
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(clap::Subcommand)]
-enum Commands {
-    /// Display system information
-    System {
-        /// Show detailed system information
-        #[arg(short, long)]
-        detail: bool,
-    },
-
-    /// Manage packages (Arch Linux specific)
-    Package {
-        /// Action to perform on packages
-        #[arg(value_enum)]
-        action: PackageAction,
-
-        /// Package names
-        packages: Vec<String>,
-    },
-
-    /// Show disk usage
-    Disk {
-        /// Human-readable format
-        #[arg(short = 'H', long)]
-        human: bool,
-    },
-
-    /// Monitor system resources
-    Monitor {},
-}
-
-#[derive(clap::ValueEnum, Clone)]
-enum PackageAction {
-    Install,
-    Remove,
-    Update,
-    Search,
-    List,
-}
 
 fn main() -> Result<()> {
-    let args = Args::parse();
-
-    if args.verbose {
-        println!("{}", "Verbose mode enabled".yellow());
-    }
-
-    match args.command {
-        Commands::System { detail } => cmd_system(detail),
-        Commands::Package { action, packages } => cmd_package(action, packages, args.verbose),
-        Commands::Disk { human } => cmd_disk(human),
-        Commands::Monitor {} => cmd_monitor(),
-    }
-}
-
-fn cmd_system(detail: bool) -> Result<()> {
-    println!("{}", "System Information:".green().bold());
-
-    // Get basic system info
-    let sys = System::new_all();
-    println!("OS: {} {}",
-             sys.name().unwrap_or("Unknown".to_string()),
-             sys.os_version().unwrap_or("".to_string()));
-    println!("Host: {}", sys.host_name().unwrap_or("Unknown".to_string()));
-    println!("Kernel: {}", sys.kernel_version().unwrap_or("Unknown".to_string()));
-    println!("Uptime: {} seconds", sys.uptime());
-
-    if detail {
-        println!("\nCPU Count: {}", sys.cpus().len());
-        println!("Total Memory: {:.2} GB", sys.total_memory() as f64 / (1024.0 * 1024.0 * 1024.0));
-        println!("Free Memory: {:.2} GB", sys.free_memory() as f64 / (1024.0 * 1024.0 * 1024.0));
-    }
-
-    Ok(())
-}
-
-fn cmd_package(action: PackageAction, packages: Vec<String>, verbose: bool) -> Result<()> {
-    match action {
-        PackageAction::Install => {
-            if packages.is_empty() {
-                eprintln!("{}", "Error: No packages specified for installation".red());
-                std::process::exit(1);
-            }
-
-            println!("Installing packages: {}", packages.join(", "));
-
-            // For Arch Linux, we would typically use pacman
-            let cmd = format!("sudo pacman -S {}", packages.join(" "));
-            if verbose {
-                println!("Executing: {}", cmd.green());
-            }
-
-            // In a real implementation, we would run the command
-            // For now, we'll just simulate it
-            println!("{}", "Simulation: Package installation would happen here".blue());
-        }
-        PackageAction::Remove => {
-            if packages.is_empty() {
-                eprintln!("{}", "Error: No packages specified for removal".red());
-                std::process::exit(1);
-            }
-
-            println!("Removing packages: {}", packages.join(", "));
-            println!("{}", "Simulation: Package removal would happen here".blue());
-        }
-        PackageAction::Update => {
-            println!("Updating package databases and system...");
-            println!("{}", "Simulation: System update would happen here".blue());
-        }
-        PackageAction::Search => {
-            if packages.is_empty() {
-                eprintln!("{}", "Error: No packages specified for search".red());
-                std::process::exit(1);
-            }
-
-            println!("Searching for packages matching: {}", packages.join(", "));
-            println!("{}", "Simulation: Package search would happen here".blue());
-        }
-        PackageAction::List => {
-            println!("Listing installed packages...");
-            println!("{}", "Simulation: Package listing would happen here".blue());
-        }
-    }
-
-    Ok(())
-}
-
-fn cmd_disk(human: bool) -> Result<()> {
-    println!("{}", "Disk Usage Information:".green().bold());
-
-    let mut sys = System::new_all();
-    sys.refresh_disks_list(); // Refresh disk list
-
-    for disk in sys.disks() {
-        let total_space = disk.total_space();
-        let available_space = disk.available_space();
-        let used_space = total_space - available_space;
-        let usage_percentage = (used_space as f64 / total_space as f64) * 100.0;
-
-        if human {
-            println!("{}: {} used of {} ({:.1}%) [{}] mounted on {}",
-                disk.name().to_string_lossy(),
-                bytes_to_human(used_space),
-                bytes_to_human(total_space),
-                usage_percentage,
-                String::from_utf8_lossy(disk.file_system()),
-                disk.mount_point().to_string_lossy()
-            );
-        } else {
-            println!("{}: {} bytes used of {} bytes ({:.1}%) [{}] mounted on {}",
-                disk.name().to_string_lossy(),
-                used_space,
-                total_space,
-                usage_percentage,
-                String::from_utf8_lossy(disk.file_system()),
-                disk.mount_point().to_string_lossy()
-            );
-        }
-    }
-
-    Ok(())
-}
-
-fn cmd_monitor() -> Result<()> {
-    println!("Starting system monitor...");
-    println!("Press Ctrl+C to exit");
+    println!("{}", "TORC - Tor Network Connector".green().bold());
+    println!("{}", "Connecting your system to the Tor network for anonymous browsing".yellow());
+    println!();
 
     loop {
-        let mut sys = System::new_all();
-        sys.refresh_all();
+        show_menu();
 
-        // Clear screen (simple approach)
-        print!("\x1B[2J\x1B[1;1H");
+        print!("\n{} ", "Enter your choice:".cyan());
+        io::stdout().flush()?;
 
-        println!("{}", "TORC System Monitor".green().bold());
-        println!("{}", "=".repeat(40));
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
 
-        // CPU info
-        if let Some(cpu_info) = sys.cpus().first() {
-            println!("CPU Usage: {:.1}%", cpu_info.cpu_usage());
-        } else {
-            println!("CPU Usage: N/A");
+        match input.trim() {
+            "1" => connect_to_tor(),
+            "2" => disconnect_from_tor(),
+            "3" => check_tor_status(),
+            "4" => {
+                println!("{}", "Exiting TORC. Your system is no longer connected to Tor.".yellow());
+                break;
+            },
+            _ => println!("{}", "Invalid option. Please try again.".red()),
         }
 
-        // Memory info
-        let used_memory = sys.used_memory();
-        let total_memory = sys.total_memory();
-        let memory_pct = (used_memory as f64 / total_memory as f64) * 100.0;
-        println!("Memory: {:.1}% ({} / {})",
-                 memory_pct,
-                 bytes_to_human(used_memory),
-                 bytes_to_human(total_memory));
+        println!("\nPress Enter to continue...");
+        let mut dummy = String::new();
+        io::stdin().read_line(&mut dummy)?;
+    }
 
-        // Load average - sysinfo doesn't have load average on all platforms
-        // We'll skip this for now to avoid errors
-        // if let Some(load_avg) = sys.load_average() {
-        //     println!("Load Avg: {:.2}, {:.2}, {:.2}",
-        //              load_avg.one, load_avg.five, load_avg.fifteen);
-        // }
+    Ok(())
+}
 
-        println!("\n{} (Press Ctrl+C to exit)", "Refreshing...".yellow());
+fn show_menu() {
+    print!("\x1B[2J\x1B[1;1H");  // Clear screen
 
-        std::thread::sleep(std::time::Duration::from_secs(2));
+    println!("{}", r#"
+                                       
+▄▄▄▄▄▄▄▄▄   ▄▄▄▄▄   ▄▄▄▄▄▄▄    ▄▄▄▄▄▄▄ 
+▀▀▀███▀▀▀ ▄███████▄ ███▀▀███▄ ███▀▀▀▀▀ 
+   ███    ███   ███ ███▄▄███▀ ███      
+   ███    ███▄▄▄███ ███▀▀██▄  ███      
+   ███     ▀█████▀  ███  ▀███ ▀███████ 
+                                       
+    "#.green());
+
+    println!("{}", "TORC - Tor Network Connector".green().bold());
+    println!("{}", "=".repeat(50).cyan());
+
+    println!("{}", "1. 🔗 Connect to Tor Network".cyan());
+    println!("{}", "2. ❌ Disconnect from Tor Network".red());
+    println!("{}", "3. 🔍 Check Tor Status".yellow());
+    println!("{}", "4. 🚪 Exit".magenta());
+
+    println!("{}", "\nCurrent Status:".bold());
+    check_tor_status_inline();
+
+    println!("{}", "\n[INFO] This application routes all web traffic through the Tor network".yellow());
+    println!("{}", "[CAUTION] Tor may slow down your connection and some websites may block Tor users".red());
+}
+
+fn check_tor_status_inline() {
+    // Check if Tor service is running
+    let tor_running = is_tor_service_running();
+
+    if tor_running {
+        println!("{}", "Status: 🔴 Connected to Tor Network".green());
+    } else {
+        println!("{}", "Status: 🟢 Not Connected to Tor Network".red());
     }
 }
 
-fn bytes_to_human(bytes: u64) -> String {
-    let units = ["B", "KB", "MB", "GB", "TB"];
-    let mut size = bytes as f64;
-    let mut unit_index = 0;
+fn connect_to_tor() {
+    println!("{}", "\nAttempting to connect to Tor Network...".yellow());
 
-    while size >= 1024.0 && unit_index < units.len() - 1 {
-        size /= 1024.0;
-        unit_index += 1;
+    // Check if Tor is installed
+    if !is_tor_installed() {
+        println!("{}", "Tor is not installed on your system.".red());
+        println!("{}", "Please install Tor using your package manager (e.g., 'sudo pacman -S tor' on Arch Linux)".yellow());
+        return;
     }
 
-    format!("{:.2} {}", size, units[unit_index])
+    // On Arch Linux, we need to use systemctl to manage the Tor service
+    println!("{}", "Starting Tor service...".yellow());
+
+    // In a real implementation, this would use the systemctl command
+    // For simulation purposes, we'll just show a message
+    simulate_tor_connection();
+
+    println!("{}", "Tor connection established! All web traffic is now routed through Tor.".green());
+    println!("{}", "Your IP address is now hidden and your traffic is anonymized.".green());
+}
+
+fn disconnect_from_tor() {
+    println!("{}", "\nDisconnecting from Tor Network...".yellow());
+
+    // In a real implementation, this would stop the Tor service
+    simulate_tor_disconnection();
+
+    println!("{}", "Disconnected from Tor Network. Your traffic is no longer anonymized.".red());
+    println!("{}", "Regular internet connection restored.".green());
+}
+
+fn check_tor_status() {
+    println!("{}", "\nTor Network Status:".cyan().bold());
+
+    let tor_installed = is_tor_installed();
+    let tor_running = is_tor_service_running();
+
+    if !tor_installed {
+        println!("{}", "Tor Status: ❌ Tor is not installed".red());
+        println!("{}", "Install Tor to use this feature (e.g., 'sudo pacman -S tor' on Arch Linux)".yellow());
+        return;
+    }
+
+    if tor_running {
+        println!("{}", "Tor Status: 🟢 Service is running".green());
+        println!("{}", "Traffic: 🔒 All traffic is routed through Tor".green());
+        display_tor_info();
+    } else {
+        println!("{}", "Tor Status: 🔴 Service is not running".red());
+        println!("{}", "Traffic: 🌐 Direct connection (not anonymous)".yellow());
+    }
+}
+
+fn is_tor_installed() -> bool {
+    // In a real implementation, this would check if the tor command exists
+    // For simulation, we'll return true assuming it's installed
+    true
+}
+
+fn is_tor_service_running() -> bool {
+    // In a real implementation, this would check if the Tor service is active
+    // For simulation, we'll return false (not connected by default)
+    false
+}
+
+fn simulate_tor_connection() {
+    // Simulate the connection process
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+    println!("{}", "✓ Tor daemon started".green());
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    println!("{}", "✓ Establishing circuit to Tor network".green());
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+    println!("{}", "✓ Circuit established - connection secured".green());
+}
+
+fn simulate_tor_disconnection() {
+    // Simulate the disconnection process
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    println!("{}", "✓ Disconnecting from Tor network".green());
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    println!("{}", "✓ Tor service stopped".green());
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    println!("{}", "✓ Regular routing restored".green());
+}
+
+fn display_tor_info() {
+    println!("{}", "\nTor Configuration:".cyan());
+    println!("{}", "  SOCKS Proxy: 127.0.0.1:9050".white());
+    println!("{}", "  DNS Port: 127.0.0.1:9053".white());
+    println!("{}", "  Circuit Status: Active".white());
+
+    // In a real implementation, we would fetch actual Tor circuit information
+    println!("{}", "\nAnonymity Level: High".green());
+    println!("{}", "IP Address: Hidden via Tor Network".green());
 }

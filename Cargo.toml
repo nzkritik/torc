@@ -3,18 +3,13 @@ name = "torc"
 version = "0.1.0"
 edition = "2021"
 authors = ["Your Name <your.email@example.com>"]
-description = "A Rust CLI application for Linux"
+description = "A Rust CLI application to connect your system to the Tor network"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/yourusername/torc"
 
 [dependencies]
-clap = { version = "4.0", features = ["derive"] }
 anyhow = "1.0"
 colored = "2.0"
-sysinfo = "0.29"
-
-[dev-dependencies]
-assert_cmd = "2.0"
 
 [[bin]]
 name = "torc"

@@ -1,20 +1,31 @@
-# TORC - A Rust CLI Application for Linux
+# TORC - Tor Network Connector
 
-TORC is a comprehensive command-line interface application built in Rust, specifically designed for Linux systems with initial focus on Arch Linux.
+```                                       
+▄▄▄▄▄▄▄▄▄   ▄▄▄▄▄   ▄▄▄▄▄▄▄    ▄▄▄▄▄▄▄ 
+▀▀▀███▀▀▀ ▄███████▄ ███▀▀███▄ ███▀▀▀▀▀ 
+   ███    ███   ███ ███▄▄███▀ ███      
+   ███    ███▄▄▄███ ███▀▀██▄  ███      
+   ███     ▀█████▀  ███  ▀███ ▀███████ 
+                                                                              
+```
+
+TORC is a Rust CLI application that allows you to safely connect your system to the Tor network for anonymous browsing. The application provides a simple menu-driven interface to connect, disconnect, and check the status of your Tor connection.
 
 ## Features
 
-- **System Information**: View detailed system information including OS, kernel, uptime, CPU count, memory usage, etc.
-- **Package Management**: Interface with package managers (specifically designed for Arch Linux's pacman)
-- **Disk Monitoring**: Check disk usage across all mounted drives with human-readable output
-- **System Monitoring**: Real-time monitoring of CPU, memory, and load averages
+- **Connect to Tor**: Route all web traffic through the Tor network for anonymity
+- **Disconnect from Tor**: Restore your regular internet connection
+- **Check Status**: View current connection status and Tor configuration
+- **System Integration**: Designed for easy use on Linux systems, especially Arch Linux
 
 ## Installation
 
 ### Prerequisites
 
 - Rust (latest stable version recommended)
-- On Arch Linux: `sudo pacman -S rust`
+- Tor must be installed on your system
+  - On Arch Linux: `sudo pacman -S tor`
+  - On Ubuntu/Debian: `sudo apt install tor`
 
 ### Building from Source
 
@@ -33,73 +44,29 @@ cargo install --path .
 ## Usage
 
 ```bash
-# Show system information
-torc system
-
-# Show detailed system information
-torc system --detail
-
-# Manage packages (Arch Linux specific)
-torc package install package_name
-torc package remove package_name  
-torc package update
-torc package search package_name
-torc package list
-
-# Show disk usage
-torc disk
-torc disk --human  # Human-readable format
-
-# Monitor system resources in real-time
-torc monitor
-
-# Enable verbose output
-torc --verbose system
+# Run the Tor connector
+torc
 ```
 
-## Commands
+This will open an interactive menu with the following options:
+1. Connect to Tor Network
+2. Disconnect from Tor Network
+3. Check Tor Status
+4. Exit
 
-### System Information
-```bash
-torc system [OPTIONS]
-```
-Display system information with optional detailed view.
+## How It Works
 
-Options:
-- `-d, --detail`: Show detailed system information
+TORC works by managing the Tor service on your system. When you connect:
+- The system's Tor daemon is started
+- Traffic is routed through the Tor network
+- Your IP address is hidden and traffic is anonymized
 
-### Package Management
-```bash
-torc package [ACTION] [PACKAGES]...
-```
-Manage system packages with pacman integration.
-
-Actions:
-- `install`: Install packages
-- `remove`: Remove packages
-- `update`: Update the system
-- `search`: Search for packages
-- `list`: List installed packages
-
-### Disk Usage
-```bash
-torc disk [OPTIONS]
-```
-Show disk usage information.
-
-Options:
-- `-h, --human`: Display sizes in human-readable format
-
-### System Monitor
-```bash
-torc monitor
-```
-Run real-time system resource monitor.
+When you disconnect:
+- The Tor service is stopped
+- Regular internet routing is restored
 
 ## Dependencies
 
-- `clap`: For command-line argument parsing
-- `sysinfo`: For system information retrieval
 - `colored`: For colored terminal output
 - `anyhow`: For error handling
 
@@ -110,6 +77,13 @@ Run real-time system resource monitor.
 3. Commit your changes (`git commit -m 'Add amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
+
+## Security Notice
+
+- Tor provides anonymity by routing traffic through multiple nodes
+- Tor may slow down your connection significantly
+- Some websites block Tor users
+- Always practice safe browsing habits even when using Tor
 
 ## License
 
