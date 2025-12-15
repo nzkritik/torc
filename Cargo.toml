@@ -10,6 +10,7 @@ repository = "https://github.com/yourusername/torc"
 [dependencies]
 anyhow = "1.0"
 colored = "2.0"
+rustix = "0.38"
 
 [[bin]]
 name = "torc"
