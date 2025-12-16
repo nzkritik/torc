@@ -211,6 +211,9 @@ async fn show_interactive_menu() -> Result<()> {
 async fn show_menu() {
     print!("\x1B[2J\x1B[1;1H");  // Clear screen
 
+    // Get system information for display
+    let sys_info = get_system_info();
+
     println!("{}", r#"
 
 ▄▄▄▄▄▄▄▄▄   ▄▄▄▄▄   ▄▄▄▄▄▄▄    ▄▄▄▄▄▄▄
@@ -222,7 +225,9 @@ async fn show_menu() {
     "#.green());
 
     println!("{}", "TORC - Tor Network Connector".green().bold());
-    println!("{}", "=".repeat(50).cyan());
+
+    // Display system information in brackets next to the title
+    println!("{} [{}]", "=".repeat(25).cyan(), sys_info.cyan());
 
     println!("{}", "1. 🔗 Connect to Tor Network".cyan());
     println!("{}", "2. ❌ Disconnect from Tor Network".red());
@@ -727,6 +732,29 @@ async fn get_geo_location(ip: &str) -> Result<GeoIPInfo> {
         region: None,
         isp: None,
     })
+}
+
+// Function to get basic system information
+fn get_system_info() -> String {
+    use sysinfo::System;
+
+    let mut sys = System::new_all();
+    sys.refresh_all(); // Update all information
+
+    // Use the methods that are available in sysinfo v0.30
+    let os_name = System::name().unwrap_or_else(|| "Unknown".to_string());
+    let os_version = System::os_version().unwrap_or_else(|| "Unknown".to_string());
+    let host_name = System::host_name().unwrap_or_else(|| "Unknown".to_string());
+    let kernel_version = System::kernel_version().unwrap_or_else(|| "Unknown".to_string());
+
+    // Format system info as a compact string for the menu
+    let os_info = if os_version != "Unknown" {
+        format!("{} {}", os_name, os_version)
+    } else {
+        os_name
+    };
+
+    format!("OS: {}, Host: {}, Kernel: {}", os_info, host_name, kernel_version)
 }
 
 // Function to display the current IP address and location
