@@ -1213,10 +1213,16 @@ fn get_current_network_interfaces() -> Result<Vec<String>> {
 fn configure_system_proxy() {
     println!("{}", "Configuring system to route traffic through Tor...".yellow());
 
-    // Set environment variables for proxy
-    std::env::set_var("HTTP_PROXY", "socks5://127.0.0.1:9050");
-    std::env::set_var("HTTPS_PROXY", "socks5://127.0.0.1:9050");
+    // Set environment variables for proxy - Note: Tor SOCKS port is not an HTTP proxy
     std::env::set_var("ALL_PROXY", "socks5://127.0.0.1:9050");
+
+    // Note: Tor's default port 9050 is a SOCKS proxy, not an HTTP proxy
+    // When configuring browsers, users must select SOCKS instead of HTTP proxy
+    // Setting HTTP_PROXY/HTTPS_PROXY to SOCKS addresses will cause issues
+    // These are commented out to prevent the error the user reported:
+    // "This is a SOCKS proxy, not an HTTP proxy" error
+    // std::env::set_var("HTTP_PROXY", "socks5://127.0.0.1:9050");
+    // std::env::set_var("HTTPS_PROXY", "socks5://127.0.0.1:9050");
 
     // Try to set GNOME proxy settings to route through Tor
     let _ = Command::new("gsettings")
@@ -1231,8 +1237,8 @@ fn configure_system_proxy() {
 
     // Configure iptables rules to redirect traffic through Tor
     if configure_iptables_for_tor() {
-        println!("{}", "✓ System configured to use Tor proxy (127.0.0.1:9050)".green());
-        println!("{}", "✓ Environment variables and GNOME proxy settings updated".green());
+        println!("{}", "✓ System configured to use Tor SOCKS proxy (127.0.0.1:9050)".green());
+        println!("{}", "✓ GNOME proxy settings updated (SOCKS only - not HTTP)".green());
         println!("{}", "✓ IPTables rules configured for Tor traffic routing".green());
     } else {
         // If iptables configuration failed, warn the user but continue
@@ -1248,6 +1254,12 @@ fn configure_system_proxy() {
         warn!("DNS configuration failed - DNS traffic may not be routed through Tor");
         println!("{}", "⚠️  DNS configuration failed - DNS traffic may not be routed through Tor".yellow());
     }
+
+    // Provide guidance about browser configuration
+    println!("{}", "ℹ️  Note: Tor port 9050 is a SOCKS proxy, not an HTTP proxy".blue());
+    println!("{}", "ℹ️  Configure your browser's network settings to use SOCKS proxy, not HTTP".blue());
+    println!("{}", "ℹ️  For Firefox: Preferences → Network Settings → Manual proxy config → SOCKS".blue());
+    println!("{}", "ℹ️  For Chrome/Chromium: Command line '--proxy-server=socks5://127.0.0.1:9050'".blue());
 }
 
 // Function to configure DNS to route through Tor and clear DNS cache
@@ -1879,10 +1891,8 @@ fn restore_system_proxy() {
     println!("{}", "Restoring normal system routing...".yellow());
 
     // Remove Tor-related proxy environment variables
-    std::env::remove_var("HTTP_PROXY");
-    std::env::remove_var("HTTPS_PROXY");
+    // We only set ALL_PROXY, so only need to remove that
     std::env::remove_var("ALL_PROXY");
-    std::env::remove_var("NO_PROXY");
 
     // Try to reset GNOME proxy settings to none
     let _ = Command::new("gsettings")
