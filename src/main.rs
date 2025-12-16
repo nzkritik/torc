@@ -12,6 +12,28 @@ use clap::{Parser, Subcommand};
 use serde_json;
 use std::sync::LazyLock;
 use tokio;
+use log::{debug, error, info, warn};
+use env_logger::Builder;
+use chrono::Local;
+
+// Initialize logging system
+fn init_logger() {
+    Builder::new()
+        .format(|buf, record| {
+            writeln!(buf,
+                "{} [{}] - {}: {}",
+                Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+                record.level(),
+                record.target(),
+                record.args()
+            )
+        })
+        .filter(None, log::LevelFilter::Info)  // Default to Info level
+        .parse_env("TORC_LOG")  // Allow override via TORC_LOG environment variable
+        .init();
+
+    info!("Logger initialized for TORC application");
+}
 
 // Structure to store IP address and geo location information
 #[derive(Debug, Clone)]
@@ -31,7 +53,7 @@ struct Cli {
     command: Option<Commands>,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 enum Commands {
     /// Manage system Tor operations (connect, disconnect, status)
     System {
@@ -45,7 +67,7 @@ enum Commands {
     },
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 enum SystemOps {
     /// Connect to the Tor network
     Connect,
@@ -55,7 +77,7 @@ enum SystemOps {
     Status,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 enum DiskOps {
     /// Encrypt a disk partition
     Encrypt { path: String },
@@ -67,26 +89,37 @@ enum DiskOps {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Initialize logging system
+    init_logger();
+    info!("Starting TORC application");
+
     // Check if system needs restoration due to unexpected shutdown/crash
     check_for_unexpected_shutdown()?;
 
     let cli = Cli::parse();
+    info!("Parsed command line arguments: {:?}", cli.command);
 
     match &cli.command {
         Some(Commands::System { operation }) => {
+            info!("Executing System command with operation: {:?}", operation);
             match operation {
                 Some(SystemOps::Connect) => connect_to_tor().await?,
                 Some(SystemOps::Disconnect) => disconnect_from_tor().await?,
                 Some(SystemOps::Status) => check_tor_status().await?,
-                None => show_interactive_menu().await?,  // Show menu if no sub-operation specified
+                None => {
+                    info!("Showing interactive menu for System command");
+                    show_interactive_menu().await? // Show menu if no sub-operation specified
+                },
             }
         },
         Some(Commands::Disk { operation }) => {
+            info!("Executing Disk command with operation: {:?}", operation);
             match operation {
                 Some(DiskOps::Encrypt { path }) => encrypt_disk(path)?,
                 Some(DiskOps::Decrypt { path }) => decrypt_disk(path)?,
                 Some(DiskOps::Status { path }) => check_disk_encryption_status(path)?,
                 None => {
+                    info!("Showing disk operations help");
                     println!("{}", "Disk operations:".cyan());
                     println!("{}", "  encrypt <path> - Encrypt a disk partition".cyan());
                     println!("{}", "  decrypt <path> - Decrypt a disk partition".cyan());
@@ -95,25 +128,33 @@ async fn main() -> Result<()> {
                 }
             }
         },
-        None => show_interactive_menu().await?,  // Show menu if no command specified
+        None => {
+            info!("Showing interactive menu as no command specified");
+            show_interactive_menu().await? // Show menu if no command specified
+        },
     }
 
+    info!("TORC application completed successfully");
     Ok(())
 }
 
 // Function to check if the system needs restoration due to unexpected shutdown
 fn check_for_unexpected_shutdown() -> Result<()> {
+    info!("Checking for unexpected shutdown or crash");
     // Check if Tor service is running but we don't have a record of being connected
     // This indicates a possible crash or unexpected shutdown
     if is_tor_service_running() {
+        info!("Tor service is running - checking for unexpected state");
         // We could implement a more sophisticated check here by storing state in a temporary file
         // For now, we'll just warn the user if Tor is running without explicit connection info
 
         // Check if we have state information that suggests we should be connected
         let torc_state_file = "/tmp/torc_state";
         let tor_connected_previously = std::path::Path::new(torc_state_file).exists();
+        info!("Tor connected previously: {}", tor_connected_previously);
 
         if tor_connected_previously {
+            info!("Detected unexpected Tor service state from previous session");
             println!("{}", "⚠️  Tor service appears to be running from a previous session".yellow());
 
             // Ask user what to do
@@ -124,28 +165,40 @@ fn check_for_unexpected_shutdown() -> Result<()> {
             io::stdin().read_line(&mut input)?;
 
             if input.trim().to_lowercase() == "y" || input.trim().to_lowercase() == "yes" {
+                info!("User chose to restore system configuration");
                 // Attempt to restore system state
                 if let Err(e) = restore_system_state_if_needed() {
+                    warn!("Could not restore system state: {}", e);
                     println!("{}", format!("Warning: Could not restore system state: {}", e).red());
                 } else {
+                    info!("System state restored successfully");
                     restore_system_proxy();
                 }
 
                 // Stop the Tor service
                 if let Err(e) = stop_tor_service() {
+                    warn!("Could not stop Tor service: {}", e);
                     println!("{}", format!("Warning: Could not stop Tor service: {}", e).red());
+                } else {
+                    info!("Tor service stopped during unexpected shutdown restoration");
                 }
 
                 // Clean up the state file
                 let _ = std::fs::remove_file(torc_state_file);
 
                 println!("{}", "System state has been restored to normal configuration.".green());
+                info!("System configuration restored to normal state");
+            } else {
+                info!("User chose not to restore system configuration");
             }
         } else {
             // Tor is running but we don't have state info - warn the user
+            warn!("Tor service is running but no state file exists - possible unexpected startup");
             println!("{}", "⚠️  Tor service is currently running".yellow());
             println!("{}", "⚠️  If this is unexpected, consider running 'torc system disconnect'".yellow());
         }
+    } else {
+        info!("No unexpected shutdown detected - Tor service is not running");
     }
 
     Ok(())
@@ -215,7 +268,6 @@ async fn show_menu() {
     let sys_info = get_system_info();
     println!("{}", "=".repeat(50).green());
     println!("{}", r#"
-
 ▄▄▄▄▄▄▄▄▄   ▄▄▄▄▄   ▄▄▄▄▄▄▄    ▄▄▄▄▄▄▄
 ▀▀▀███▀▀▀ ▄███████▄ ███▀▀███▄ ███▀▀▀▀▀
    ███    ███   ███ ███▄▄███▀ ███
@@ -257,6 +309,7 @@ async fn check_tor_status_inline() {
 }
 
 async fn connect_to_tor() -> Result<()> {
+    info!("Starting connection to Tor Network");
     println!("{}", "\n🔄 Connecting to Tor Network...".yellow());
 
     // Check if Tor is installed
@@ -265,8 +318,10 @@ async fn connect_to_tor() -> Result<()> {
         println!("{}", "❌".red());
         println!("{}", "Tor is not installed on your system.".red());
         println!("{}", "Please install Tor using your package manager (e.g., 'sudo pacman -S tor' on Arch Linux)".yellow());
+        warn!("Tor is not installed on the system");
         return Ok(());
     }
+    info!("Tor is installed");
     println!("{}", "✅".green());
 
     // Check if already connected
@@ -274,28 +329,38 @@ async fn connect_to_tor() -> Result<()> {
     if is_tor_service_running() {
         println!("{}", "🟢 Already running".green());
         println!("{}", "Tor service is already running!".yellow());
+        info!("Tor service already running, checking status...");
         check_tor_status_inline().await;
         return Ok(());
     }
+    info!("Tor service is not currently running");
     println!("{}", "🔴 Not running".red());
 
     // Validate sudo access before attempting to start service
     print!("{}", "🔑 Validating sudo access... ");
     match validate_sudo_access() {
-        Ok(_) => println!("{}", "✅".green()),
+        Ok(_) => {
+            info!("Sudo access validated successfully");
+            println!("{}", "✅".green());
+        },
         Err(e) => {
             println!("{}", "❌".red());
             println!("{}", format!("Insufficient privileges: {}", e).red());
             println!("{}", "Please ensure you have sudo access to start system services.".yellow());
+            error!("Insufficient privileges to start Tor service: {}", e);
             return Ok(());
         }
     }
 
     // Backup current system state before making changes
     if let Err(e) = backup_system_state() {
+        warn!("Could not backup system state: {}", e);
         println!("{}", format!("Warning: Could not backup system state: {}", e).yellow());
+    } else {
+        info!("System state backed up successfully");
     }
 
+    info!("Starting Tor service...");
     // Show progress indicator while starting service
     print!("{}", "⚡ Starting Tor service... ".yellow());
     std::io::stdout().flush().unwrap(); // Ensure print is displayed immediately
@@ -303,15 +368,20 @@ async fn connect_to_tor() -> Result<()> {
     // Try to start the Tor service
     match start_tor_service_with_delay() {
         Ok(_) => {
+            info!("Tor service started successfully");
             println!("{}", "🎉 Success!".green());
 
             // Verify that Tor is actually running
             print!("{}", "✅ Verifying Tor service status... ".yellow());
             if is_tor_service_running() {
+                info!("Tor service is running and verified");
                 // Create a state file to indicate that we're intentionally connected
                 let torc_state_file = "/tmp/torc_state";
                 if let Err(e) = std::fs::write(torc_state_file, "connected") {
+                    warn!("Could not create state file: {}", e);
                     println!("{}", format!("Warning: Could not create state file: {}", e).yellow());
+                } else {
+                    info!("State file created successfully");
                 }
 
                 println!("{}", "✅ Verified".green());
@@ -320,15 +390,19 @@ async fn connect_to_tor() -> Result<()> {
 
                 // Configure system to route traffic through Tor (this is a simplified representation)
                 configure_system_proxy();
+                info!("System proxy configured for Tor");
 
                 // Perform connection verification
                 verify_tor_connection();
+                info!("Connection verification completed");
             } else {
+                warn!("Tor service may not be fully operational");
                 println!("{}", "⚠️  Warning".yellow());
                 println!("{}", "Warning: Tor service may not be fully operational.".yellow());
             }
         },
         Err(e) => {
+            error!("Failed to connect to Tor: {}", e);
             println!("{}", "💥 Failed".red());
             println!("{}", format!("Failed to connect to Tor: {}", e).red());
             println!("{}", "📋 Troubleshooting tips:".yellow());
@@ -337,62 +411,81 @@ async fn connect_to_tor() -> Result<()> {
             println!("{}", "- Check system logs for more details: journalctl -u tor".yellow());
         }
     }
+    info!("Tor connection attempt completed");
     Ok(())
 }
 
 async fn disconnect_from_tor() -> Result<()> {
+    info!("Starting disconnection from Tor Network");
     println!("{}", "\nDisconnecting from Tor Network...".yellow());
 
     match stop_tor_service() {
         Ok(_) => {
+            info!("Tor service stopped successfully");
             // Restore system state from backup if available
             if let Err(e) = restore_system_state_if_needed() {
+                warn!("Could not restore system state: {}", e);
                 println!("{}", format!("Warning: Could not restore system state: {}", e).red());
+            } else {
+                info!("System state restored successfully");
             }
 
             // Clean up the state file
             let torc_state_file = "/tmp/torc_state";
             if std::path::Path::new(torc_state_file).exists() {
                 if let Err(e) = std::fs::remove_file(torc_state_file) {
+                    warn!("Could not remove state file: {}", e);
                     println!("{}", format!("Warning: Could not remove state file: {}", e).yellow());
+                } else {
+                    info!("State file removed successfully");
                 }
             }
 
             println!("{}", "Disconnected from Tor Network. Your traffic is no longer anonymized.".red());
             println!("{}", "Regular internet connection restored.".green());
+            info!("Successfully disconnected from Tor Network");
         },
         Err(e) => {
+            error!("Failed to disconnect from Tor Network: {}", e);
             println!("{}", format!("Failed to disconnect from Tor Network: {}", e).red());
         }
     }
+    info!("Tor disconnection completed");
     Ok(())
 }
 
 async fn check_tor_status() -> Result<()> {
+    info!("Checking Tor Network Status");
     println!("{}", "\nTor Network Status:".cyan().bold());
 
     let tor_installed = is_tor_installed();
     let tor_running = is_tor_service_running();
 
     if !tor_installed {
+        warn!("Tor is not installed on the system");
         println!("{}", "Tor Status: ❌ Tor is not installed".red());
         println!("{}", "Install Tor to use this feature (e.g., 'sudo pacman -S tor' on Arch Linux)".yellow());
         return Ok(());
     }
+    info!("Tor is installed: {}", tor_installed);
 
     if tor_running {
+        info!("Tor service is running");
         println!("{}", "Tor Status: 🟢 Service is running".green());
         println!("{}", "Traffic: 🔒 All traffic is routed through Tor".green());
         display_tor_info();
     } else {
+        info!("Tor service is not running");
         println!("{}", "Tor Status: 🔴 Service is not running".red());
         println!("{}", "Traffic: 🌐 Direct connection (not anonymous)".yellow());
     }
 
     // Display IP and location info
+    info!("Fetching IP address information");
     println!("{}", "\n🌐 IP Address Information:".cyan());
     display_current_ip_and_location().await;
 
+    info!("Tor status check completed");
     Ok(())
 }
 
@@ -631,6 +724,7 @@ fn is_tor_installed() -> bool {
 // Function to get the current external IP address
 async fn get_external_ip() -> Result<Option<String>> {
     let client = reqwest::Client::new();
+    info!("Attempting to retrieve external IP address");
 
     // Try multiple IP checking services as fallbacks
     let urls = [
@@ -641,26 +735,40 @@ async fn get_external_ip() -> Result<Option<String>> {
         "https://checkip.amazonaws.com",
     ];
 
-    for url in &urls {
+    for (i, url) in urls.iter().enumerate() {
+        debug!("Trying IP service #{}: {}", i + 1, url);
         match client.get(*url).send().await {
             Ok(response) => {
                 if response.status().is_success() {
                     match response.text().await {
                         Ok(ip) => {
                             let ip = ip.trim().to_string();
+                            debug!("Retrieved IP from {}: {}", url, ip);
                             // Basic validation to ensure it's a valid IP
                             if is_valid_ip(&ip) {
+                                info!("Successfully retrieved external IP address: {}", ip);
                                 return Ok(Some(ip));
+                            } else {
+                                debug!("Invalid IP format from {}: {}", url, ip);
                             }
                         }
-                        Err(_) => continue,
+                        Err(e) => {
+                            debug!("Failed to read response from {}: {}", url, e);
+                            continue;
+                        }
                     }
+                } else {
+                    debug!("Service {} returned non-success status: {}", url, response.status());
                 }
             }
-            Err(_) => continue,
+            Err(e) => {
+                debug!("Failed to connect to {}: {}", url, e);
+                continue;
+            }
         }
     }
 
+    warn!("Failed to retrieve external IP address from all services");
     Ok(None)
 }
 
@@ -681,6 +789,7 @@ fn is_valid_ip(ip_str: &str) -> bool {
 
 // Function to get geo location information for an IP
 async fn get_geo_location(ip: &str) -> Result<GeoIPInfo> {
+    info!("Attempting to retrieve geo location for IP: {}", ip);
     let client = reqwest::Client::new();
 
     // Try IP geolocation services in order of preference
@@ -689,20 +798,29 @@ async fn get_geo_location(ip: &str) -> Result<GeoIPInfo> {
         ("https://ipinfo.io/{}/json", vec!["country", "city", "region", "org"])
     ];
 
-    for (url_template, fields) in &services {
+    for (i, (url_template, fields)) in services.iter().enumerate() {
         let url = url_template.replace("{}", ip);
+        debug!("Trying geo location service #{}: {}", i + 1, url);
 
         match client.get(&url).send().await {
             Ok(response) => {
                 if response.status().is_success() {
                     match response.json::<serde_json::Value>().await {
                         Ok(geo_data) => {
+                            debug!("Successfully retrieved geo data from {}", url);
                             let country = geo_data.get(fields[0]).and_then(|v| v.as_str()).map(|s| s.to_string());
                             let city = geo_data.get(fields[1]).and_then(|v| v.as_str()).map(|s| s.to_string());
                             let region = geo_data.get(fields[2]).and_then(|v| v.as_str()).map(|s| s.to_string());
                             let isp = geo_data.get(fields[3]).and_then(|v| v.as_str()).map(|s| s.to_string());
 
                             if country.is_some() || city.is_some() || region.is_some() || isp.is_some() {
+                                info!("Successfully retrieved geo location for IP {}: country={}, city={}, region={}, isp={}",
+                                      ip,
+                                      country.as_deref().unwrap_or("N/A"),
+                                      city.as_deref().unwrap_or("N/A"),
+                                      region.as_deref().unwrap_or("N/A"),
+                                      isp.as_deref().unwrap_or("N/A"));
+
                                 return Ok(GeoIPInfo {
                                     ip: ip.to_string(),
                                     country,
@@ -713,19 +831,21 @@ async fn get_geo_location(ip: &str) -> Result<GeoIPInfo> {
                             }
                         }
                         Err(e) => {
-                            eprintln!("Failed to parse geo location data from {}: {}", url, e);
+                            debug!("Failed to parse geo location data from {}: {}", url, e);
                         }
                     }
+                } else {
+                    debug!("Service {} returned non-success status: {}", url, response.status());
                 }
             }
             Err(e) => {
-                eprintln!("Failed to fetch geo location data from {}: {}", url, e);
+                debug!("Failed to fetch geo location data from {}: {}", url, e);
             }
         }
     }
 
     // If all services failed, return a basic GeoIPInfo with just the IP
-    eprintln!("Failed to get geo location data for IP: {} from all services", ip);
+    warn!("Failed to get geo location data for IP: {} from all services", ip);
     Ok(GeoIPInfo {
         ip: ip.to_string(),
         country: None,
