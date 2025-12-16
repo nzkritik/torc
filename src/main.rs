@@ -1745,8 +1745,8 @@ fn configure_iptables_for_tor() -> bool {
         vec!["-t", "mangle", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "127.0.0.1", "-j", "TOR_REDIRECT_V4"],
         // Mark traffic from Tor user to not be redirected (avoid loops)
         vec!["-t", "mangle", "-A", "TOR_REDIRECT_V4", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
-        // Redirect remaining traffic to Tor's transparent proxy port (9040), excluding local addresses
-        vec!["-t", "mangle", "-A", "TOR_REDIRECT_V4", "-p", "tcp", "!", "-d", "10.0.0.0/8", "!", "-d", "172.16.0.0/12", "!", "-d", "192.168.0.0/16", "--tcp-flags", "FIN,SYN,RST,ACK", "SYN", "-j", "REDIRECT", "--to-port", "9040"]
+        // Redirect remaining traffic to Mark (using MARK target for routing)
+        vec!["-t", "mangle", "-A", "TOR_REDIRECT_V4", "-p", "tcp", "--tcp-flags", "FIN,SYN,RST,ACK", "SYN", "-j", "MARK", "--set-mark", "1"]
     ];
 
     // Apply IPv4 iptables rules
@@ -1778,7 +1778,9 @@ fn configure_iptables_for_tor() -> bool {
         vec!["-t", "nat", "-N", "TOR_SOCKS_V4"],
         // Don't redirect traffic from Tor user (avoid loops)
         vec!["-t", "nat", "-A", "TOR_SOCKS_V4", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
-        // Redirect all other TCP traffic to Tor's SOCKS proxy
+        // Redirect marked traffic to Tor's SOCKS proxy port (9050)
+        vec!["-t", "nat", "-A", "TOR_SOCKS_V4", "-m", "mark", "--mark", "1", "-p", "tcp", "-j", "REDIRECT", "--to-port", "9050"],
+        // Redirect all other TCP traffic to Tor's SOCKS proxy (alternative approach)
         vec!["-t", "nat", "-A", "TOR_SOCKS_V4", "-p", "tcp", "--tcp-flags", "FIN,SYN,RST,ACK", "SYN", "-j", "REDIRECT", "--to-port", "9050"],
         // Use the chain in OUTPUT
         vec!["-t", "nat", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "127.0.0.1", "-j", "TOR_SOCKS_V4"]
@@ -1814,8 +1816,8 @@ fn configure_iptables_for_tor() -> bool {
         vec!["-t", "mangle", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "::1", "-j", "TOR_REDIRECT_V6"],
         // Mark traffic from Tor user to not be redirected (avoid loops)
         vec!["-t", "mangle", "-A", "TOR_REDIRECT_V6", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
-        // Redirect remaining traffic to Tor's transparent proxy port (9040), excluding local addresses
-        vec!["-t", "mangle", "-A", "TOR_REDIRECT_V6", "-p", "tcp", "!", "-d", "::/128", "!", "-d", "fc00::/7", "!", "-d", "fe80::/10", "--tcp-flags", "FIN,SYN,RST,ACK", "SYN", "-j", "REDIRECT", "--to-port", "9040"]
+        // Mark remaining traffic for routing via Tor (using MARK target for routing)
+        vec!["-t", "mangle", "-A", "TOR_REDIRECT_V6", "-p", "tcp", "--tcp-flags", "FIN,SYN,RST,ACK", "SYN", "-j", "MARK", "--set-mark", "1"]
     ];
 
     // Apply IPv6 iptables rules
@@ -1839,18 +1841,13 @@ fn configure_iptables_for_tor() -> bool {
         }
     }
 
-    // Also configure OUTPUT chain for the main table to redirect IPv6 traffic to Tor's SOCKS port
+    // IPv6 traffic redirection - using a simpler approach since nat REDIRECT for IPv6 can be problematic
     let ipv6_nat_rules = vec![
+        // For IPv6, we'll use a more basic approach
         // Flush existing OUTPUT chain rules in nat table for IPv6
         vec!["-t", "nat", "-F", "OUTPUT"],
-        // Create new chain for Tor traffic (IPv6)
-        vec!["-t", "nat", "-N", "TOR_SOCKS_V6"],
-        // Don't redirect traffic from Tor user (avoid loops)
-        vec!["-t", "nat", "-A", "TOR_SOCKS_V6", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
-        // Redirect all other TCP traffic to Tor's SOCKS proxy
-        vec!["-t", "nat", "-A", "TOR_SOCKS_V6", "-p", "tcp", "--tcp-flags", "FIN,SYN,RST,ACK", "SYN", "-j", "REDIRECT", "--to-port", "9050"],
-        // Use the chain in OUTPUT
-        vec!["-t", "nat", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "::1", "-j", "TOR_SOCKS_V6"]
+        // Redirect all TCP traffic except localhost to Tor's SOCKS proxy
+        vec!["-t", "nat", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "::1", "-j", "REDIRECT", "--to-port", "9050"]
     ];
 
     for rule in &ipv6_nat_rules {

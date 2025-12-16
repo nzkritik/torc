@@ -127,6 +127,7 @@ Currently targeting Arch-based and Debian-based Linux distributions with plans t
 - [x] Implement proper IPv6 traffic routing support
 - [x] Implement comprehensive DNS leak protection with backup/restore functionality
 - [x] Implement DNS configuration validation for proper Tor DNS setup
+- [x] Fix iptables rule configuration to eliminate invalid argument errors
 - [ ] Add connection status verification that checks if traffic is actually routed through Tor
 - [ ] Implement circuit monitoring to show active Tor circuits
 - [ ] Add proxy authentication support if needed
