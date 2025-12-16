@@ -7,6 +7,7 @@ use std::fs;
 use colored::*;
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
+use serde_json;
 
 #[derive(Parser)]
 #[command(name = "torc")]
@@ -320,8 +321,6 @@ fn disconnect_from_tor() -> Result<()> {
             // Restore system state from backup if available
             if let Err(e) = restore_system_state_if_needed() {
                 println!("{}", format!("Warning: Could not restore system state: {}", e).red());
-            } else {
-                restore_system_proxy();
             }
 
             // Clean up the state file
@@ -336,7 +335,7 @@ fn disconnect_from_tor() -> Result<()> {
             println!("{}", "Regular internet connection restored.".green());
         },
         Err(e) => {
-            println!("{}", format!("Failed to disconnect from Tor: {}", e).red());
+            println!("{}", format!("Failed to disconnect from Tor Network: {}", e).red());
         }
     }
     Ok(())
@@ -610,7 +609,7 @@ struct SystemNetworkState {
 // Global variable to store the backup of system state
 static mut SYSTEM_STATE_BACKUP: Option<SystemNetworkState> = None;
 
-fn backup_system_state() -> Result<SystemNetworkState, Box<dyn std::error::Error>> {
+fn backup_system_state() -> Result<SystemNetworkState> {
     println!("{}", "Backing up current system network state...".yellow());
 
     // Store current proxy settings
@@ -644,26 +643,85 @@ fn backup_system_state() -> Result<SystemNetworkState, Box<dyn std::error::Error
     Ok(state)
 }
 
-fn get_current_proxy_settings() -> Result<Option<String>, Box<dyn std::error::Error>> {
-    // Placeholder: In a real implementation, this would check various proxy settings
+fn get_current_proxy_settings() -> Result<Option<String>> {
+    // In a real implementation, this would check various proxy settings
     // such as environment variables (HTTP_PROXY, HTTPS_PROXY, etc.)
     // and system proxy configurations
 
-    // For now, we'll simulate getting current proxy settings
+    // Get all proxy-related environment variables
     let http_proxy = std::env::var("HTTP_PROXY").ok();
     let https_proxy = std::env::var("HTTPS_PROXY").ok();
+    let ftp_proxy = std::env::var("FTP_PROXY").ok();
+    let no_proxy = std::env::var("NO_PROXY").ok();
+    let all_proxy = std::env::var("ALL_PROXY").ok();
 
-    let combined_proxy = match (&http_proxy, &https_proxy) {
-        (Some(http), Some(https)) => Some(format!("HTTP: {}, HTTPS: {}", http, https)),
-        (Some(http), None) => Some(format!("HTTP: {}", http)),
-        (None, Some(https)) => Some(format!("HTTPS: {}", https)),
-        (None, None) => None,
-    };
+    // Get system-wide proxy settings if available (for GNOME/KDE systems)
+    let mut system_http_proxy = None;
+    let mut system_https_proxy = None;
 
-    Ok(combined_proxy)
+    // Try to get GNOME proxy settings
+    if let Ok(gnome_http_output) = Command::new("gsettings")
+        .args(&["get", "org.gnome.system.proxy.http", "host"])
+        .output()
+    {
+        if gnome_http_output.status.success() {
+            let output_str = String::from_utf8_lossy(&gnome_http_output.stdout).trim().to_string();
+            if !output_str.is_empty() && output_str != "''" {
+                if let Ok(port_output) = Command::new("gsettings")
+                    .args(&["get", "org.gnome.system.proxy.http", "port"])
+                    .output()
+                {
+                    if port_output.status.success() {
+                        let port_str = String::from_utf8_lossy(&port_output.stdout).trim().to_string();
+                        let port_num = port_str.parse::<u16>().unwrap_or(8080);
+                        system_http_proxy = Some(format!("{}:{}", output_str.trim_matches('\''), port_num));
+                    }
+                }
+            }
+        }
+    }
+
+    // Try to get GNOME HTTPS proxy settings
+    if let Ok(gnome_https_output) = Command::new("gsettings")
+        .args(&["get", "org.gnome.system.proxy.https", "host"])
+        .output()
+    {
+        if gnome_https_output.status.success() {
+            let output_str = String::from_utf8_lossy(&gnome_https_output.stdout).trim().to_string();
+            if !output_str.is_empty() && output_str != "''" {
+                if let Ok(port_output) = Command::new("gsettings")
+                    .args(&["get", "org.gnome.system.proxy.https", "port"])
+                    .output()
+                {
+                    if port_output.status.success() {
+                        let port_str = String::from_utf8_lossy(&port_output.stdout).trim().to_string();
+                        let port_num = port_str.parse::<u16>().unwrap_or(8080);
+                        system_https_proxy = Some(format!("{}:{}", output_str.trim_matches('\''), port_num));
+                    }
+                }
+            }
+        }
+    }
+
+    // Compile all proxy settings into a JSON-like structure
+    let proxy_settings = serde_json::json!({
+        "environment": {
+            "HTTP_PROXY": http_proxy,
+            "HTTPS_PROXY": https_proxy,
+            "FTP_PROXY": ftp_proxy,
+            "NO_PROXY": no_proxy,
+            "ALL_PROXY": all_proxy
+        },
+        "system": {
+            "GNOME_HTTP_PROXY": system_http_proxy,
+            "GNOME_HTTPS_PROXY": system_https_proxy
+        }
+    }).to_string();
+
+    Ok(Some(proxy_settings))
 }
 
-fn get_current_firewall_rules() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+fn get_current_firewall_rules() -> Result<Vec<String>> {
     // Placeholder: In a real implementation, this would get current iptables rules
     let output = Command::new("iptables")
         .args(&["-L", "-n"])
@@ -686,25 +744,58 @@ fn get_current_firewall_rules() -> Result<Vec<String>, Box<dyn std::error::Error
     }
 }
 
-fn get_current_dns_servers() -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    // Placeholder: In a real implementation, this would parse /etc/resolv.conf
+fn get_current_dns_servers() -> Result<Vec<String>> {
+    // In a real implementation, this would parse /etc/resolv.conf
     // or query systemd-resolved for current DNS servers
 
-    // Reading /etc/resolv.conf to get current DNS servers
-    let contents = std::fs::read_to_string("/etc/resolv.conf")?;
+    // Determine if we're using systemd-resolved by checking its status
+    let using_systemd_resolved = Command::new("systemctl")
+        .args(&["is-active", "systemd-resolved"])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false);
+
     let mut dns_servers = Vec::new();
 
-    for line in contents.lines() {
-        if line.starts_with("nameserver ") {
-            let dns_server = line.trim_start_matches("nameserver ").to_string();
-            dns_servers.push(dns_server);
+    if using_systemd_resolved {
+        // Get DNS servers from systemd-resolved
+        let output = Command::new("resolvectl")
+            .args(&["status"])
+            .output()?;
+
+        if output.status.success() {
+            let status = String::from_utf8_lossy(&output.stdout);
+            for line in status.lines() {
+                if line.contains("Current DNS Server:") || line.contains("DNS Servers:") {
+                    // Extract IP addresses from the line
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    for part in parts {
+                        // Simple validation for IPv4 addresses
+                        if part.contains('.') && part.chars().all(|c| c.is_ascii_digit() || c == '.') {
+                            dns_servers.push(part.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Also read from /etc/resolv.conf as fallback or additional sources
+    if let Ok(contents) = std::fs::read_to_string("/etc/resolv.conf") {
+        for line in contents.lines() {
+            if line.starts_with("nameserver ") {
+                let dns_server = line.trim_start_matches("nameserver ").to_string();
+                if !dns_servers.contains(&dns_server) {  // Avoid duplicates
+                    dns_servers.push(dns_server);
+                }
+            }
         }
     }
 
     Ok(dns_servers)
 }
 
-fn get_current_routing_table() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+fn get_current_routing_table() -> Result<Vec<String>> {
     // Placeholder: In a real implementation, this would get the current routing table
     let output = Command::new("ip")
         .args(&["route", "show"])
@@ -744,7 +835,7 @@ fn get_current_routing_table() -> Result<Vec<String>, Box<dyn std::error::Error>
     }
 }
 
-fn get_current_network_interfaces() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+fn get_current_network_interfaces() -> Result<Vec<String>> {
     // Placeholder: In a real implementation, this would get current network interface configurations
     let output = Command::new("ip")
         .args(&["addr", "show"])
@@ -768,21 +859,52 @@ fn get_current_network_interfaces() -> Result<Vec<String>, Box<dyn std::error::E
 
 fn configure_system_proxy() {
     println!("{}", "Configuring system to route traffic through Tor...".yellow());
-    // In a real implementation, this would set system proxy settings
-    // and potentially configure iptables rules to redirect traffic
-    // For simulation, we'll just show a message
+
+    // Set environment variables for proxy
+    std::env::set_var("HTTP_PROXY", "socks5://127.0.0.1:9050");
+    std::env::set_var("HTTPS_PROXY", "socks5://127.0.0.1:9050");
+    std::env::set_var("ALL_PROXY", "socks5://127.0.0.1:9050");
+
+    // Try to set GNOME proxy settings to route through Tor
+    let _ = Command::new("gsettings")
+        .args(&["set", "org.gnome.system.proxy", "mode", "manual"])
+        .output();
+    let _ = Command::new("gsettings")
+        .args(&["set", "org.gnome.system.proxy.socks", "host", "127.0.0.1"])
+        .output();
+    let _ = Command::new("gsettings")
+        .args(&["set", "org.gnome.system.proxy.socks", "port", "9050"])
+        .output();
+
     println!("{}", "✓ System configured to use Tor proxy (127.0.0.1:9050)".green());
+    println!("{}", "✓ Environment variables and GNOME proxy settings updated".green());
 }
 
 fn restore_system_proxy() {
     println!("{}", "Restoring normal system routing...".yellow());
-    // In a real implementation, this would restore normal proxy settings
-    // and remove any iptables rules
-    // For simulation, we'll just show a message
+
+    // Remove Tor-related proxy environment variables
+    std::env::remove_var("HTTP_PROXY");
+    std::env::remove_var("HTTPS_PROXY");
+    std::env::remove_var("ALL_PROXY");
+    std::env::remove_var("NO_PROXY");
+
+    // Try to reset GNOME proxy settings to none
+    let _ = Command::new("gsettings")
+        .args(&["set", "org.gnome.system.proxy", "mode", "none"])
+        .output();
+    let _ = Command::new("gsettings")
+        .args(&["reset", "org.gnome.system.proxy.socks", "host"])
+        .output();
+    let _ = Command::new("gsettings")
+        .args(&["reset", "org.gnome.system.proxy.socks", "port"])
+        .output();
+
+    println!("{}", "✓ Environment variables and GNOME proxy settings reset".green());
     println!("{}", "✓ Normal system routing restored".green());
 }
 
-fn restore_system_state() -> Result<(), Box<dyn std::error::Error>> {
+fn restore_system_state() -> Result<()> {
     println!("{}", "Restoring system network state from backup...".yellow());
 
     unsafe {
@@ -815,25 +937,123 @@ fn restore_system_state() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-fn restore_proxy_settings(proxy_settings: &Option<String>) -> Result<(), Box<dyn std::error::Error>> {
-    // Placeholder: In a real implementation, this would restore proxy settings
+fn restore_proxy_settings(proxy_settings: &Option<String>) -> Result<()> {
+    // In a real implementation, this would restore proxy settings
     // This would involve restoring environment variables and system proxy configs
     println!("{}", "Restoring proxy settings...".yellow());
 
     match proxy_settings {
-        Some(settings) => {
-            println!("{}", format!("Previous proxy settings: {}", settings).green());
-            // In real implementation, would restore the actual proxy settings
+        Some(settings_str) => {
+            // Parse the JSON string containing proxy settings
+            if let Ok(settings) = serde_json::from_str::<serde_json::Value>(settings_str) {
+                let env_proxies = settings.get("environment");
+
+                // Restore environment variables
+                if let Some(env) = env_proxies {
+                    if let Some(http_proxy) = env.get("HTTP_PROXY").and_then(|v| v.as_str()) {
+                        std::env::set_var("HTTP_PROXY", http_proxy);
+                        println!("{}", format!("Restored HTTP_PROXY: {}", http_proxy).green());
+                    } else {
+                        std::env::remove_var("HTTP_PROXY");
+                        println!("{}", "Removed HTTP_PROXY".green());
+                    }
+
+                    if let Some(https_proxy) = env.get("HTTPS_PROXY").and_then(|v| v.as_str()) {
+                        std::env::set_var("HTTPS_PROXY", https_proxy);
+                        println!("{}", format!("Restored HTTPS_PROXY: {}", https_proxy).green());
+                    } else {
+                        std::env::remove_var("HTTPS_PROXY");
+                        println!("{}", "Removed HTTPS_PROXY".green());
+                    }
+
+                    if let Some(ftp_proxy) = env.get("FTP_PROXY").and_then(|v| v.as_str()) {
+                        std::env::set_var("FTP_PROXY", ftp_proxy);
+                        println!("{}", format!("Restored FTP_PROXY: {}", ftp_proxy).green());
+                    } else {
+                        std::env::remove_var("FTP_PROXY");
+                        println!("{}", "Removed FTP_PROXY".green());
+                    }
+
+                    if let Some(no_proxy) = env.get("NO_PROXY").and_then(|v| v.as_str()) {
+                        std::env::set_var("NO_PROXY", no_proxy);
+                        println!("{}", format!("Restored NO_PROXY: {}", no_proxy).green());
+                    } else {
+                        std::env::remove_var("NO_PROXY");
+                        println!("{}", "Removed NO_PROXY".green());
+                    }
+
+                    if let Some(all_proxy) = env.get("ALL_PROXY").and_then(|v| v.as_str()) {
+                        std::env::set_var("ALL_PROXY", all_proxy);
+                        println!("{}", format!("Restored ALL_PROXY: {}", all_proxy).green());
+                    } else {
+                        std::env::remove_var("ALL_PROXY");
+                        println!("{}", "Removed ALL_PROXY".green());
+                    }
+                }
+
+                // Restore system-wide proxy settings if available
+                let system_proxies = settings.get("system");
+                if let Some(system) = system_proxies {
+                    if let Some(gnome_http_proxy) = system.get("GNOME_HTTP_PROXY").and_then(|v| v.as_str()) {
+                        if let Some((host, port)) = gnome_http_proxy.split_once(':') {
+                            let _ = Command::new("gsettings")
+                                .args(&["set", "org.gnome.system.proxy.http", "host", host])
+                                .output();
+                            let _ = Command::new("gsettings")
+                                .args(&["set", "org.gnome.system.proxy.http", "port", port])
+                                .output();
+                            println!("{}", format!("Restored GNOME HTTP proxy: {}", gnome_http_proxy).green());
+                        }
+                    }
+
+                    if let Some(gnome_https_proxy) = system.get("GNOME_HTTPS_PROXY").and_then(|v| v.as_str()) {
+                        if let Some((host, port)) = gnome_https_proxy.split_once(':') {
+                            let _ = Command::new("gsettings")
+                                .args(&["set", "org.gnome.system.proxy.https", "host", host])
+                                .output();
+                            let _ = Command::new("gsettings")
+                                .args(&["set", "org.gnome.system.proxy.https", "port", port])
+                                .output();
+                            println!("{}", format!("Restored GNOME HTTPS proxy: {}", gnome_https_proxy).green());
+                        }
+                    }
+                }
+
+                println!("{}", "Proxy settings restored successfully".green());
+            } else {
+                println!("{}", "Could not parse proxy settings from backup".red());
+            }
         },
         None => {
-            println!("{}", "No previous proxy settings to restore".green());
+            println!("{}", "No previous proxy settings to restore".yellow());
+
+            // Even if no backup exists, clean up any Tor-related proxy settings
+            std::env::remove_var("HTTP_PROXY");
+            std::env::remove_var("HTTPS_PROXY");
+            std::env::remove_var("FTP_PROXY");
+            std::env::remove_var("NO_PROXY");
+            std::env::remove_var("ALL_PROXY");
+
+            // Try to reset GNOME proxy settings to none if they were set to Tor
+            let _ = Command::new("gsettings")
+                .args(&["reset", "org.gnome.system.proxy.http", "host"])
+                .output();
+            let _ = Command::new("gsettings")
+                .args(&["reset", "org.gnome.system.proxy.http", "port"])
+                .output();
+            let _ = Command::new("gsettings")
+                .args(&["reset", "org.gnome.system.proxy.https", "host"])
+                .output();
+            let _ = Command::new("gsettings")
+                .args(&["reset", "org.gnome.system.proxy.https", "port"])
+                .output();
         }
     }
 
     Ok(())
 }
 
-fn restore_firewall_rules(rules: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+fn restore_firewall_rules(rules: &[String]) -> Result<()> {
     // Placeholder: In a real implementation, this would restore iptables rules
     // This would involve restoring the saved firewall configuration
     println!("{}", "Restoring firewall rules...".yellow());
@@ -843,16 +1063,65 @@ fn restore_firewall_rules(rules: &[String]) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
-fn restore_dns_servers(servers: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    // Placeholder: In a real implementation, this would restore DNS server configuration
+fn restore_dns_servers(servers: &[String]) -> Result<()> {
+    // In a real implementation, this would restore DNS server configuration
     println!("{}", "Restoring DNS servers...".yellow());
     println!("{}", format!("DNS servers to restore: {:?}", servers).green());
 
-    // In a real implementation, would restore the actual DNS servers to /etc/resolv.conf
+    // Check if we're using systemd-resolved
+    let using_systemd_resolved = Command::new("systemctl")
+        .args(&["is-active", "systemd-resolved"])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false);
+
+    if using_systemd_resolved && !servers.is_empty() {
+        // For systemd-resolved, try to restore DNS settings
+        // This is a best-effort approach as systemd-resolved configuration is complex
+        println!("{}", "Using systemd-resolved, attempting to restore DNS...".yellow());
+
+        // Reset DNS configuration to defaults (this varies by system)
+        let _ = Command::new("systemctl")
+            .args(&["reload", "systemd-resolved"])
+            .output();
+    } else if !servers.is_empty() {
+        // For traditional setup, restore /etc/resolv.conf
+        // This requires root privileges
+
+        // Create backup of current resolv.conf if it doesn't exist
+        let resolv_conf_path = "/etc/resolv.conf";
+        let backup_path = "/etc/resolv.conf.torc.bak";
+
+        if Path::new(resolv_conf_path).exists() && !Path::new(backup_path).exists() {
+            let _ = fs::copy(resolv_conf_path, backup_path);
+        }
+
+        // Create new content with the original DNS servers
+        let mut new_content = String::from("# Generated by torc - DNS configuration restored\n");
+        for server in servers {
+            new_content.push_str(&format!("nameserver {}\n", server));
+        }
+
+        // Write the new content to resolv.conf (requires sudo)
+        match std::env::var("SUDO_USER") {
+            Ok(_) => {
+                // We're running with sudo, so we can write to /etc/resolv.conf
+                fs::write(resolv_conf_path, new_content)?;
+                println!("{}", "DNS configuration restored to /etc/resolv.conf".green());
+            },
+            Err(_) => {
+                println!("{}", "Warning: Need root privileges to modify /etc/resolv.conf".yellow());
+                println!("{}", format!("Original DNS servers: {:?}", servers).yellow());
+            }
+        }
+    } else {
+        println!("{}", "No DNS servers to restore, keeping current configuration".yellow());
+    }
+
     Ok(())
 }
 
-fn restore_routing_table(routes: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+fn restore_routing_table(routes: &[String]) -> Result<()> {
     // Placeholder: In a real implementation, this would restore routing table
     println!("{}", "Restoring routing table...".yellow());
     println!("{}", format!("Routes to restore: {}", routes.len()).green());
@@ -861,7 +1130,7 @@ fn restore_routing_table(routes: &[String]) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
-fn restore_network_interfaces(interfaces: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+fn restore_network_interfaces(interfaces: &[String]) -> Result<()> {
     // Placeholder: In a real implementation, this would restore network interface configurations
     println!("{}", "Restoring network interfaces...".yellow());
     println!("{}", format!("Interfaces to restore: {}", interfaces.len()).green());
