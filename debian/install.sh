@@ -29,7 +29,7 @@ fi
 
 # Install additional packages that may be needed for network configuration
 echo "Installing additional dependencies..."
-for pkg in iptables iproute2 net-tools which procps; do
+for pkg in iptables iproute2 net-tools dnsutils which procps; do
     if ! dpkg -l | grep -q "^ii  $pkg "; then
         sudo apt install -y "$pkg"
     fi

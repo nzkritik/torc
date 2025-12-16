@@ -42,6 +42,13 @@ if ! command -v route &>/dev/null; then
     fi
 fi
 
+# Install dig command for DNS diagnostics
+if ! command -v dig &>/dev/null; then
+    if ! pacman -Q dnsutils &>/dev/null; then
+        sudo pacman -S --noconfirm dnsutils
+    fi
+fi
+
 # Install other potential dependencies
 for pkg in which procps-ng; do
     if ! pacman -Q "$pkg" &>/dev/null; then
