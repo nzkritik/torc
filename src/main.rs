@@ -213,7 +213,7 @@ async fn show_menu() {
 
     // Get system information for display
     let sys_info = get_system_info();
-
+    println!("{}", "=".repeat(50).green());
     println!("{}", r#"
 
 ▄▄▄▄▄▄▄▄▄   ▄▄▄▄▄   ▄▄▄▄▄▄▄    ▄▄▄▄▄▄▄
@@ -223,11 +223,12 @@ async fn show_menu() {
    ███     ▀█████▀  ███  ▀███ ▀███████
 
     "#.green());
-
-    println!("{}", "TORC - Tor Network Connector".green().bold());
+    println!("{}", "       TORC - Tor Connection Manager".green().bold());
+    println!("{}", "=".repeat(50).green());
 
     // Display system information in brackets next to the title
     println!("[{}]", sys_info.magenta());
+    println!("{}", "=".repeat(50).green());
 
     println!("{}", "1. 🔗 Connect to Tor Network".cyan());
     println!("{}", "2. ❌ Disconnect from Tor Network".red());
