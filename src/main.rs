@@ -1,14 +1,27 @@
 use std::io::{self, Write};
 use std::process::Command;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::path::Path;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::fs;
 use colored::*;
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 use serde_json;
 use std::sync::LazyLock;
+use tokio;
+
+// Structure to store IP address and geo location information
+#[derive(Debug, Clone)]
+struct GeoIPInfo {
+    ip: String,
+    country: Option<String>,
+    city: Option<String>,
+    region: Option<String>,
+    isp: Option<String>,
+}
 
 #[derive(Parser)]
 #[command(name = "torc")]
@@ -52,7 +65,8 @@ enum DiskOps {
     Status { path: String },
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     // Check if system needs restoration due to unexpected shutdown/crash
     check_for_unexpected_shutdown()?;
 
@@ -61,10 +75,10 @@ fn main() -> Result<()> {
     match &cli.command {
         Some(Commands::System { operation }) => {
             match operation {
-                Some(SystemOps::Connect) => connect_to_tor()?,
-                Some(SystemOps::Disconnect) => disconnect_from_tor()?,
-                Some(SystemOps::Status) => check_tor_status()?,
-                None => show_interactive_menu()?,  // Show menu if no sub-operation specified
+                Some(SystemOps::Connect) => connect_to_tor().await?,
+                Some(SystemOps::Disconnect) => disconnect_from_tor().await?,
+                Some(SystemOps::Status) => check_tor_status().await?,
+                None => show_interactive_menu().await?,  // Show menu if no sub-operation specified
             }
         },
         Some(Commands::Disk { operation }) => {
@@ -81,7 +95,7 @@ fn main() -> Result<()> {
                 }
             }
         },
-        None => show_interactive_menu()?,  // Show menu if no command specified
+        None => show_interactive_menu().await?,  // Show menu if no command specified
     }
 
     Ok(())
@@ -156,13 +170,13 @@ fn restore_system_state_if_needed() -> Result<()> {
     Ok(())
 }
 
-fn show_interactive_menu() -> Result<()> {
+async fn show_interactive_menu() -> Result<()> {
     println!("{}", "TORC - Tor Network Connector".green().bold());
     println!("{}", "Connecting your system to the Tor network for anonymous browsing".yellow());
     println!();
 
     loop {
-        show_menu();
+        show_menu().await;
 
         print!("\n{} ", "Enter your choice:".cyan());
         io::stdout().flush()?;
@@ -171,9 +185,9 @@ fn show_interactive_menu() -> Result<()> {
         io::stdin().read_line(&mut input)?;
 
         let result = match input.trim() {
-            "1" => connect_to_tor().map(|_| ()),
-            "2" => disconnect_from_tor().map(|_| ()),
-            "3" => check_tor_status().map(|_| ()),
+            "1" => connect_to_tor().await.map(|_| ()),
+            "2" => disconnect_from_tor().await.map(|_| ()),
+            "3" => check_tor_status().await.map(|_| ()),
             "4" => {
                 println!("{}", "Exiting TORC. Your system is no longer connected to Tor.".yellow());
                 break;
@@ -194,17 +208,17 @@ fn show_interactive_menu() -> Result<()> {
     Ok(())
 }
 
-fn show_menu() {
+async fn show_menu() {
     print!("\x1B[2J\x1B[1;1H");  // Clear screen
 
     println!("{}", r#"
-                                       
-▄▄▄▄▄▄▄▄▄   ▄▄▄▄▄   ▄▄▄▄▄▄▄    ▄▄▄▄▄▄▄ 
-▀▀▀███▀▀▀ ▄███████▄ ███▀▀███▄ ███▀▀▀▀▀ 
-   ███    ███   ███ ███▄▄███▀ ███      
-   ███    ███▄▄▄███ ███▀▀██▄  ███      
-   ███     ▀█████▀  ███  ▀███ ▀███████ 
-                                       
+
+▄▄▄▄▄▄▄▄▄   ▄▄▄▄▄   ▄▄▄▄▄▄▄    ▄▄▄▄▄▄▄
+▀▀▀███▀▀▀ ▄███████▄ ███▀▀███▄ ███▀▀▀▀▀
+   ███    ███   ███ ███▄▄███▀ ███
+   ███    ███▄▄▄███ ███▀▀██▄  ███
+   ███     ▀█████▀  ███  ▀███ ▀███████
+
     "#.green());
 
     println!("{}", "TORC - Tor Network Connector".green().bold());
@@ -216,13 +230,13 @@ fn show_menu() {
     println!("{}", "4. 🚪 Exit".magenta());
 
     println!("{}", "\nCurrent Status:".bold());
-    check_tor_status_inline();
+    check_tor_status_inline().await;
 
     println!("{}", "\n[INFO] This application routes all web traffic through the Tor network".yellow());
     println!("{}", "[CAUTION] Tor may slow down your connection and some websites may block Tor users".red());
 }
 
-fn check_tor_status_inline() {
+async fn check_tor_status_inline() {
     // Check if Tor service is running
     let tor_running = is_tor_service_running();
 
@@ -231,9 +245,12 @@ fn check_tor_status_inline() {
     } else {
         println!("{}", "Status: 🔴 Not Connected to Tor Network".red());
     }
+
+    // Display current IP info
+    display_current_ip_and_location().await;
 }
 
-fn connect_to_tor() -> Result<()> {
+async fn connect_to_tor() -> Result<()> {
     println!("{}", "\n🔄 Connecting to Tor Network...".yellow());
 
     // Check if Tor is installed
@@ -251,7 +268,7 @@ fn connect_to_tor() -> Result<()> {
     if is_tor_service_running() {
         println!("{}", "🟢 Already running".green());
         println!("{}", "Tor service is already running!".yellow());
-        check_tor_status_inline();
+        check_tor_status_inline().await;
         return Ok(());
     }
     println!("{}", "🔴 Not running".red());
@@ -317,7 +334,7 @@ fn connect_to_tor() -> Result<()> {
     Ok(())
 }
 
-fn disconnect_from_tor() -> Result<()> {
+async fn disconnect_from_tor() -> Result<()> {
     println!("{}", "\nDisconnecting from Tor Network...".yellow());
 
     match stop_tor_service() {
@@ -345,7 +362,7 @@ fn disconnect_from_tor() -> Result<()> {
     Ok(())
 }
 
-fn check_tor_status() -> Result<()> {
+async fn check_tor_status() -> Result<()> {
     println!("{}", "\nTor Network Status:".cyan().bold());
 
     let tor_installed = is_tor_installed();
@@ -365,6 +382,11 @@ fn check_tor_status() -> Result<()> {
         println!("{}", "Tor Status: 🔴 Service is not running".red());
         println!("{}", "Traffic: 🌐 Direct connection (not anonymous)".yellow());
     }
+
+    // Display IP and location info
+    println!("{}", "\n🌐 IP Address Information:".cyan());
+    display_current_ip_and_location().await;
+
     Ok(())
 }
 
@@ -597,6 +619,168 @@ fn is_tor_installed() -> bool {
             eprintln!("Warning: Could not check if Tor is installed: {}", e);
             false
         },
+    }
+}
+
+// Function to get the current external IP address
+async fn get_external_ip() -> Result<Option<String>> {
+    let client = reqwest::Client::new();
+
+    // Try multiple IP checking services as fallbacks
+    let urls = [
+        "https://api.ipify.org",
+        "https://icanhazip.com",
+        "https://ident.me",
+        "https://ipecho.net/plain",
+        "https://checkip.amazonaws.com",
+    ];
+
+    for url in &urls {
+        match client.get(*url).send().await {
+            Ok(response) => {
+                if response.status().is_success() {
+                    match response.text().await {
+                        Ok(ip) => {
+                            let ip = ip.trim().to_string();
+                            // Basic validation to ensure it's a valid IP
+                            if is_valid_ip(&ip) {
+                                return Ok(Some(ip));
+                            }
+                        }
+                        Err(_) => continue,
+                    }
+                }
+            }
+            Err(_) => continue,
+        }
+    }
+
+    Ok(None)
+}
+
+// Function to check if a string is a valid IP address
+fn is_valid_ip(ip_str: &str) -> bool {
+    // Check if it's a valid IPv4 address
+    if Ipv4Addr::from_str(ip_str).is_ok() {
+        return true;
+    }
+
+    // Check if it's a valid IPv6 address
+    if Ipv6Addr::from_str(ip_str).is_ok() {
+        return true;
+    }
+
+    false
+}
+
+// Function to get geo location information for an IP
+async fn get_geo_location(ip: &str) -> Result<GeoIPInfo> {
+    let client = reqwest::Client::new();
+
+    // Use ipapi.co for geo location lookup
+    let url = format!("https://ipapi.co/{}/json/", ip);
+
+    match client.get(&url).send().await {
+        Ok(response) => {
+            if response.status().is_success() {
+                match response.json::<serde_json::Value>().await {
+                    Ok(geo_data) => {
+                        let country = geo_data.get("country_name").and_then(|v| v.as_str()).map(|s| s.to_string());
+                        let city = geo_data.get("city").and_then(|v| v.as_str()).map(|s| s.to_string());
+                        let region = geo_data.get("region").and_then(|v| v.as_str()).map(|s| s.to_string());
+                        let isp = geo_data.get("org").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                        Ok(GeoIPInfo {
+                            ip: ip.to_string(),
+                            country,
+                            city,
+                            region,
+                            isp,
+                        })
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to parse geo location data: {}", e);
+                        Ok(GeoIPInfo {
+                            ip: ip.to_string(),
+                            country: None,
+                            city: None,
+                            region: None,
+                            isp: None,
+                        })
+                    }
+                }
+            } else {
+                eprintln!("Failed to get geo location data for IP: {}", ip);
+                Ok(GeoIPInfo {
+                    ip: ip.to_string(),
+                    country: None,
+                    city: None,
+                    region: None,
+                    isp: None,
+                })
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to fetch geo location data: {}", e);
+            Ok(GeoIPInfo {
+                ip: ip.to_string(),
+                country: None,
+                city: None,
+                region: None,
+                isp: None,
+            })
+        }
+    }
+}
+
+// Function to display the current IP address and location
+async fn display_current_ip_and_location() {
+    print!("{}", "🌐 Checking your public IP address... ".cyan());
+    std::io::stdout().flush().unwrap();
+
+    match get_external_ip().await {
+        Ok(Some(ip)) => {
+            println!("{}", "✓".green());
+            print!("{}", "🌍 Getting location info... ".cyan());
+            std::io::stdout().flush().unwrap();
+
+            match get_geo_location(&ip).await {
+                Ok(geo_info) => {
+                    println!("{}", "✓".green());
+                    println!("  📍 Your public IP: {}", geo_info.ip.yellow().bold());
+
+                    if let Some(country) = &geo_info.country {
+                        print!("     Country: {}", country.green());
+                    }
+
+                    if let Some(city) = &geo_info.city {
+                        print!(", City: {}", city.green());
+                    }
+
+                    if let Some(region) = &geo_info.region {
+                        print!(", Region: {}", region.green());
+                    }
+
+                    if let Some(isp) = &geo_info.isp {
+                        println!("\n     ISP: {}", isp.green());
+                    } else {
+                        println!();
+                    }
+                }
+                Err(e) => {
+                    println!("{}", "✗".red());
+                    println!("     📡 IP: {} (Location lookup failed: {})", ip.yellow().bold(), e.to_string().red());
+                }
+            }
+        }
+        Ok(None) => {
+            println!("{}", "✗".red());
+            println!("{}", "     ❌ Could not determine your public IP address".red());
+        }
+        Err(e) => {
+            println!("{}", "✗".red());
+            println!("     ❌ Error getting public IP: {}", e.to_string().red());
+        }
     }
 }
 
