@@ -122,8 +122,8 @@ Currently targeting Arch-based and Debian-based Linux distributions with plans t
 ## TODO List
 
 ### Core Functionality
-- [ ] Implement actual system-wide traffic routing through Tor (currently only starts Tor service)
-- [ ] Configure iptables rules to redirect all traffic through Tor SOCKS proxy
+- [x] Implement actual system-wide traffic routing through Tor (currently only starts Tor service)
+- [x] Configure iptables rules to redirect all traffic through Tor SOCKS proxy
 - [ ] Implement proper DNS leak protection
 - [ ] Add connection status verification that checks if traffic is actually routed through Tor
 - [ ] Implement circuit monitoring to show active Tor circuits

@@ -1229,9 +1229,147 @@ fn configure_system_proxy() {
         .args(&["set", "org.gnome.system.proxy.socks", "port", "9050"])
         .output();
 
-    println!("{}", "✓ System configured to use Tor proxy (127.0.0.1:9050)".green());
-    println!("{}", "✓ Environment variables and GNOME proxy settings updated".green());
+    // Configure iptables rules to redirect traffic through Tor
+    if configure_iptables_for_tor() {
+        println!("{}", "✓ System configured to use Tor proxy (127.0.0.1:9050)".green());
+        println!("{}", "✓ Environment variables and GNOME proxy settings updated".green());
+        println!("{}", "✓ IPTables rules configured for Tor traffic routing".green());
+    } else {
+        // If iptables configuration failed, warn the user but continue
+        warn!("IPTables configuration failed - traffic may not be properly routed through Tor");
+        println!("{}", "⚠️  System configured but IPTables rules failed - traffic may not be properly routed".yellow());
+        println!("{}", "⚠️  Please check your sudo permissions for iptables".yellow());
+    }
 }
+
+// Helper function to get the Tor user ID
+fn get_tor_user_id() -> Option<String> {
+    // Try to get Tor user ID from common locations
+    let possible_users = vec!["tor", "debian-tor"];
+
+    for user in possible_users {
+        let result = Command::new("id")
+            .arg("-u")
+            .arg(user)
+            .output();
+
+        if let Ok(output) = result {
+            if output.status.success() {
+                return Some(user.to_string());
+            }
+        }
+    }
+
+    // If we can't find the specific Tor user, try to get the UID from Tor process
+    let ps_result = Command::new("ps")
+        .args(&["aux"])
+        .output();
+
+    if let Ok(output) = ps_result {
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        for line in output_str.lines() {
+            if line.contains("tor") && !line.contains("ps aux") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if !parts.is_empty() {
+                    return Some(parts[0].to_string()); // First column is the user
+                }
+            }
+        }
+    }
+
+    None
+}
+
+// Configure iptables rules to redirect traffic through Tor
+// Returns true if successful, false if there was an error
+fn configure_iptables_for_tor() -> bool {
+    info!("Configuring iptables rules for Tor traffic routing");
+
+    let mut success = true;
+
+    // Define Tor user ID (default is usually 'debian-tor' or 'tor')
+    let tor_user = get_tor_user_id();
+
+    if tor_user.is_none() {
+        warn!("Could not determine Tor user ID, using default 'debian-tor'");
+        // We'll continue with a default guess
+    }
+
+    let tor_uid = tor_user.unwrap_or_else(|| "debian-tor".to_string());
+
+    // Configure iptables rules for transparent proxying through Tor
+    let iptables_rules = vec![
+        // Flush existing OUTPUT chain rules in mangle table
+        vec!["-t", "mangle", "-F", "OUTPUT"],
+        // Create new chain for Tor traffic
+        vec!["-t", "mangle", "-N", "TOR_REDIRECT"],
+        // Redirect all TCP traffic (except loopback and already redirected) to Tor
+        vec!["-t", "mangle", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "127.0.0.1", "-j", "TOR_REDIRECT"],
+        // Mark traffic from Tor user to not be redirected (avoid loops)
+        vec!["-t", "mangle", "-A", "TOR_REDIRECT", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
+        // Redirect remaining traffic to Tor's transparent proxy port (9040)
+        vec!["-t", "mangle", "-A", "TOR_REDIRECT", "-p", "tcp", "--tcp-flags", "FIN,SYN,RST,ACK", "SYN", "-j", "REDIRECT", "--to-port", "9040"]
+    ];
+
+    // Apply iptables rules
+    for rule in &iptables_rules {
+        match Command::new("sudo")
+            .arg("iptables")
+            .args(rule)
+            .output() {
+            Ok(output) => {
+                if !output.status.success() {
+                    warn!("Failed to set iptables rule '{:?}': {}", rule, String::from_utf8_lossy(&output.stderr));
+                    success = false;
+                } else {
+                    debug!("Successfully set iptables rule: {:?}", rule);
+                }
+            }
+            Err(e) => {
+                warn!("Failed to execute iptables command: {}", e);
+                success = false;
+            }
+        }
+    }
+
+    // Also configure output chain for the main table to redirect traffic to Tor's SOCKS port
+    let redirect_rules = vec![
+        // Flush existing OUTPUT chain rules in nat table
+        vec!["-t", "nat", "-F", "OUTPUT"],
+        // Create new chain for Tor traffic
+        vec!["-t", "nat", "-N", "TOR_SOCKS"],
+        // Don't redirect traffic from Tor user (avoid loops)
+        vec!["-t", "nat", "-A", "TOR_SOCKS", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
+        // Redirect all other TCP traffic to Tor's SOCKS proxy
+        vec!["-t", "nat", "-A", "TOR_SOCKS", "-p", "tcp", "--tcp-flags", "FIN,SYN,RST,ACK", "SYN", "-j", "REDIRECT", "--to-port", "9050"],
+        // Use the chain in OUTPUT
+        vec!["-t", "nat", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "127.0.0.1", "-j", "TOR_SOCKS"]
+    ];
+
+    for rule in &redirect_rules {
+        match Command::new("sudo")
+            .arg("iptables")
+            .args(rule)
+            .output() {
+            Ok(output) => {
+                if !output.status.success() {
+                    warn!("Failed to set nat iptables rule '{:?}': {}", rule, String::from_utf8_lossy(&output.stderr));
+                    success = false;
+                } else {
+                    debug!("Successfully set nat iptables rule: {:?}", rule);
+                }
+            }
+            Err(e) => {
+                warn!("Failed to execute nat iptables command: {}", e);
+                success = false;
+            }
+        }
+    }
+
+    info!("Iptables configuration for Tor completed with success: {}", success);
+    success
+}
+
 
 fn restore_system_proxy() {
     println!("{}", "Restoring normal system routing...".yellow());
@@ -1253,8 +1391,86 @@ fn restore_system_proxy() {
         .args(&["reset", "org.gnome.system.proxy.socks", "port"])
         .output();
 
-    println!("{}", "✓ Environment variables and GNOME proxy settings reset".green());
-    println!("{}", "✓ Normal system routing restored".green());
+    // Remove the iptables rules that redirect traffic through Tor
+    if restore_iptables_rules() {
+        println!("{}", "✓ Environment variables and GNOME proxy settings reset".green());
+        println!("{}", "✓ IPTables rules removed".green());
+        println!("{}", "✓ Normal system routing restored".green());
+    } else {
+        // If iptables restoration failed, warn the user but continue
+        warn!("IPTables rule restoration failed - manual cleanup may be needed");
+        println!("{}", "⚠️  Environment variables reset but IPTables restoration failed".yellow());
+        println!("{}", "⚠️  Manual iptables cleanup may be required".yellow());
+    }
+}
+
+// Restore iptables rules to remove Tor redirection
+// Returns true if successful, false if there was an error
+fn restore_iptables_rules() -> bool {
+    info!("Restoring iptables rules to normal state");
+
+    let mut success = true;
+
+    // Remove the chains we created
+    let cleanup_rules = vec![
+        // Delete references to our custom chains in OUTPUT
+        vec!["-t", "mangle", "-D", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "127.0.0.1", "-j", "TOR_REDIRECT"],
+        vec!["-t", "nat", "-D", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "127.0.0.1", "-j", "TOR_SOCKS"],
+        // Flush and delete our custom chains
+        vec!["-t", "mangle", "-F", "TOR_REDIRECT"],
+        vec!["-t", "mangle", "-X", "TOR_REDIRECT"],
+        vec!["-t", "nat", "-F", "TOR_SOCKS"],
+        vec!["-t", "nat", "-X", "TOR_SOCKS"],
+    ];
+
+    for rule in &cleanup_rules {
+        match Command::new("sudo")
+            .arg("iptables")
+            .args(rule)
+            .output() {
+            Ok(output) => {
+                if !output.status.success() {
+                    // It's OK if some rules don't exist to delete, just warn
+                    debug!("Warning during iptables cleanup for rule '{:?}': {}", rule, String::from_utf8_lossy(&output.stderr));
+                } else {
+                    debug!("Successfully removed iptables rule: {:?}", rule);
+                }
+            }
+            Err(e) => {
+                warn!("Failed to execute iptables cleanup command: {}", e);
+                success = false;
+            }
+        }
+    }
+
+    // Also flush all rules in mangle and nat tables to ensure clean state
+    let flush_rules = vec![
+        vec!["-t", "mangle", "-F"],
+        vec!["-t", "nat", "-F"],
+    ];
+
+    for rule in &flush_rules {
+        match Command::new("sudo")
+            .arg("iptables")
+            .args(rule)
+            .output() {
+            Ok(output) => {
+                if !output.status.success() {
+                    warn!("Failed to flush iptables table: {}", String::from_utf8_lossy(&output.stderr));
+                    success = false;
+                } else {
+                    debug!("Successfully flushed iptables table: {:?}", rule);
+                }
+            }
+            Err(e) => {
+                warn!("Failed to execute iptables flush command: {}", e);
+                success = false;
+            }
+        }
+    }
+
+    info!("Iptables restoration completed with success: {}", success);
+    success
 }
 
 fn restore_system_state() -> Result<()> {
