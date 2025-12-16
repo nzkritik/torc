@@ -1297,71 +1297,140 @@ fn configure_iptables_for_tor() -> bool {
 
     let tor_uid = tor_user.unwrap_or_else(|| "debian-tor".to_string());
 
-    // Configure iptables rules for transparent proxying through Tor
-    let iptables_rules = vec![
-        // Flush existing OUTPUT chain rules in mangle table
+    // Configure iptables rules for IPv4 traffic redirection
+    let ipv4_rules = vec![
+        // Flush existing OUTPUT chain rules in mangle table for IPv4
         vec!["-t", "mangle", "-F", "OUTPUT"],
-        // Create new chain for Tor traffic
-        vec!["-t", "mangle", "-N", "TOR_REDIRECT"],
+        // Create new chain for Tor traffic (IPv4)
+        vec!["-t", "mangle", "-N", "TOR_REDIRECT_V4"],
         // Redirect all TCP traffic (except loopback and already redirected) to Tor
-        vec!["-t", "mangle", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "127.0.0.1", "-j", "TOR_REDIRECT"],
+        vec!["-t", "mangle", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "127.0.0.1", "-j", "TOR_REDIRECT_V4"],
         // Mark traffic from Tor user to not be redirected (avoid loops)
-        vec!["-t", "mangle", "-A", "TOR_REDIRECT", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
+        vec!["-t", "mangle", "-A", "TOR_REDIRECT_V4", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
         // Redirect remaining traffic to Tor's transparent proxy port (9040)
-        vec!["-t", "mangle", "-A", "TOR_REDIRECT", "-p", "tcp", "--tcp-flags", "FIN,SYN,RST,ACK", "SYN", "-j", "REDIRECT", "--to-port", "9040"]
+        vec!["-t", "mangle", "-A", "TOR_REDIRECT_V4", "-p", "tcp", "--tcp-flags", "FIN,SYN,RST,ACK", "SYN", "-j", "REDIRECT", "--to-port", "9040"]
     ];
 
-    // Apply iptables rules
-    for rule in &iptables_rules {
+    // Apply IPv4 iptables rules
+    for rule in &ipv4_rules {
         match Command::new("sudo")
             .arg("iptables")
             .args(rule)
             .output() {
             Ok(output) => {
                 if !output.status.success() {
-                    warn!("Failed to set iptables rule '{:?}': {}", rule, String::from_utf8_lossy(&output.stderr));
+                    warn!("Failed to set IPv4 iptables rule '{:?}': {}", rule, String::from_utf8_lossy(&output.stderr));
                     success = false;
                 } else {
-                    debug!("Successfully set iptables rule: {:?}", rule);
+                    debug!("Successfully set IPv4 iptables rule: {:?}", rule);
                 }
             }
             Err(e) => {
-                warn!("Failed to execute iptables command: {}", e);
+                warn!("Failed to execute IPv4 iptables command: {}", e);
                 success = false;
             }
         }
     }
 
-    // Also configure output chain for the main table to redirect traffic to Tor's SOCKS port
-    let redirect_rules = vec![
-        // Flush existing OUTPUT chain rules in nat table
+    // Also configure OUTPUT chain for the main table to redirect IPv4 traffic to Tor's SOCKS port
+    let ipv4_nat_rules = vec![
+        // Flush existing OUTPUT chain rules in nat table for IPv4
         vec!["-t", "nat", "-F", "OUTPUT"],
-        // Create new chain for Tor traffic
-        vec!["-t", "nat", "-N", "TOR_SOCKS"],
+        // Create new chain for Tor traffic (IPv4)
+        vec!["-t", "nat", "-N", "TOR_SOCKS_V4"],
         // Don't redirect traffic from Tor user (avoid loops)
-        vec!["-t", "nat", "-A", "TOR_SOCKS", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
+        vec!["-t", "nat", "-A", "TOR_SOCKS_V4", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
         // Redirect all other TCP traffic to Tor's SOCKS proxy
-        vec!["-t", "nat", "-A", "TOR_SOCKS", "-p", "tcp", "--tcp-flags", "FIN,SYN,RST,ACK", "SYN", "-j", "REDIRECT", "--to-port", "9050"],
+        vec!["-t", "nat", "-A", "TOR_SOCKS_V4", "-p", "tcp", "--tcp-flags", "FIN,SYN,RST,ACK", "SYN", "-j", "REDIRECT", "--to-port", "9050"],
         // Use the chain in OUTPUT
-        vec!["-t", "nat", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "127.0.0.1", "-j", "TOR_SOCKS"]
+        vec!["-t", "nat", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "127.0.0.1", "-j", "TOR_SOCKS_V4"]
     ];
 
-    for rule in &redirect_rules {
+    for rule in &ipv4_nat_rules {
         match Command::new("sudo")
             .arg("iptables")
             .args(rule)
             .output() {
             Ok(output) => {
                 if !output.status.success() {
-                    warn!("Failed to set nat iptables rule '{:?}': {}", rule, String::from_utf8_lossy(&output.stderr));
+                    warn!("Failed to set IPv4 nat iptables rule '{:?}': {}", rule, String::from_utf8_lossy(&output.stderr));
                     success = false;
                 } else {
-                    debug!("Successfully set nat iptables rule: {:?}", rule);
+                    debug!("Successfully set IPv4 nat iptables rule: {:?}", rule);
                 }
             }
             Err(e) => {
-                warn!("Failed to execute nat iptables command: {}", e);
+                warn!("Failed to execute IPv4 nat iptables command: {}", e);
                 success = false;
+            }
+        }
+    }
+
+    // Configure ip6tables rules for IPv6 traffic redirection
+    let ipv6_rules = vec![
+        // Flush existing OUTPUT chain rules in mangle table for IPv6
+        vec!["-t", "mangle", "-F", "OUTPUT"],
+        // Create new chain for Tor traffic (IPv6)
+        vec!["-t", "mangle", "-N", "TOR_REDIRECT_V6"],
+        // Redirect all TCP traffic (except loopback and already redirected) to Tor
+        vec!["-t", "mangle", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "::1", "-j", "TOR_REDIRECT_V6"],
+        // Mark traffic from Tor user to not be redirected (avoid loops)
+        vec!["-t", "mangle", "-A", "TOR_REDIRECT_V6", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
+        // Redirect remaining traffic to Tor's transparent proxy port (9040)
+        vec!["-t", "mangle", "-A", "TOR_REDIRECT_V6", "-p", "tcp", "--tcp-flags", "FIN,SYN,RST,ACK", "SYN", "-j", "REDIRECT", "--to-port", "9040"]
+    ];
+
+    // Apply IPv6 iptables rules
+    for rule in &ipv6_rules {
+        match Command::new("sudo")
+            .arg("ip6tables")
+            .args(rule)
+            .output() {
+            Ok(output) => {
+                if !output.status.success() {
+                    warn!("Failed to set IPv6 ip6tables rule '{:?}': {}", rule, String::from_utf8_lossy(&output.stderr));
+                    // IPv6 failure is non-critical since IPv4 is the main concern
+                } else {
+                    debug!("Successfully set IPv6 ip6tables rule: {:?}", rule);
+                }
+            }
+            Err(e) => {
+                warn!("Failed to execute IPv6 ip6tables command: {}", e);
+                // IPv6 failure is non-critical since IPv4 is the main concern
+            }
+        }
+    }
+
+    // Also configure OUTPUT chain for the main table to redirect IPv6 traffic to Tor's SOCKS port
+    let ipv6_nat_rules = vec![
+        // Flush existing OUTPUT chain rules in nat table for IPv6
+        vec!["-t", "nat", "-F", "OUTPUT"],
+        // Create new chain for Tor traffic (IPv6)
+        vec!["-t", "nat", "-N", "TOR_SOCKS_V6"],
+        // Don't redirect traffic from Tor user (avoid loops)
+        vec!["-t", "nat", "-A", "TOR_SOCKS_V6", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
+        // Redirect all other TCP traffic to Tor's SOCKS proxy
+        vec!["-t", "nat", "-A", "TOR_SOCKS_V6", "-p", "tcp", "--tcp-flags", "FIN,SYN,RST,ACK", "SYN", "-j", "REDIRECT", "--to-port", "9050"],
+        // Use the chain in OUTPUT
+        vec!["-t", "nat", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "::1", "-j", "TOR_SOCKS_V6"]
+    ];
+
+    for rule in &ipv6_nat_rules {
+        match Command::new("sudo")
+            .arg("ip6tables")
+            .args(rule)
+            .output() {
+            Ok(output) => {
+                if !output.status.success() {
+                    warn!("Failed to set IPv6 nat ip6tables rule '{:?}': {}", rule, String::from_utf8_lossy(&output.stderr));
+                    // IPv6 failure is non-critical since IPv4 is the main concern
+                } else {
+                    debug!("Successfully set IPv6 nat ip6tables rule: {:?}", rule);
+                }
+            }
+            Err(e) => {
+                warn!("Failed to execute IPv6 nat ip6tables command: {}", e);
+                // IPv6 failure is non-critical since IPv4 is the main concern
             }
         }
     }
@@ -1411,19 +1480,19 @@ fn restore_iptables_rules() -> bool {
 
     let mut success = true;
 
-    // Remove the chains we created
-    let cleanup_rules = vec![
-        // Delete references to our custom chains in OUTPUT
-        vec!["-t", "mangle", "-D", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "127.0.0.1", "-j", "TOR_REDIRECT"],
-        vec!["-t", "nat", "-D", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "127.0.0.1", "-j", "TOR_SOCKS"],
-        // Flush and delete our custom chains
-        vec!["-t", "mangle", "-F", "TOR_REDIRECT"],
-        vec!["-t", "mangle", "-X", "TOR_REDIRECT"],
-        vec!["-t", "nat", "-F", "TOR_SOCKS"],
-        vec!["-t", "nat", "-X", "TOR_SOCKS"],
+    // Remove the IPv4 chains we created
+    let ipv4_cleanup_rules = vec![
+        // Delete references to our custom IPv4 chains in OUTPUT
+        vec!["-t", "mangle", "-D", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "127.0.0.1", "-j", "TOR_REDIRECT_V4"],
+        vec!["-t", "nat", "-D", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "127.0.0.1", "-j", "TOR_SOCKS_V4"],
+        // Flush and delete our custom IPv4 chains
+        vec!["-t", "mangle", "-F", "TOR_REDIRECT_V4"],
+        vec!["-t", "mangle", "-X", "TOR_REDIRECT_V4"],
+        vec!["-t", "nat", "-F", "TOR_SOCKS_V4"],
+        vec!["-t", "nat", "-X", "TOR_SOCKS_V4"],
     ];
 
-    for rule in &cleanup_rules {
+    for rule in &ipv4_cleanup_rules {
         match Command::new("sudo")
             .arg("iptables")
             .args(rule)
@@ -1431,40 +1500,98 @@ fn restore_iptables_rules() -> bool {
             Ok(output) => {
                 if !output.status.success() {
                     // It's OK if some rules don't exist to delete, just warn
-                    debug!("Warning during iptables cleanup for rule '{:?}': {}", rule, String::from_utf8_lossy(&output.stderr));
+                    debug!("Warning during IPv4 iptables cleanup for rule '{:?}': {}", rule, String::from_utf8_lossy(&output.stderr));
                 } else {
-                    debug!("Successfully removed iptables rule: {:?}", rule);
+                    debug!("Successfully removed IPv4 iptables rule: {:?}", rule);
                 }
             }
             Err(e) => {
-                warn!("Failed to execute iptables cleanup command: {}", e);
+                warn!("Failed to execute IPv4 iptables cleanup command: {}", e);
                 success = false;
             }
         }
     }
 
-    // Also flush all rules in mangle and nat tables to ensure clean state
-    let flush_rules = vec![
+    // Remove the IPv6 chains we created
+    let ipv6_cleanup_rules = vec![
+        // Delete references to our custom IPv6 chains in OUTPUT
+        vec!["-t", "mangle", "-D", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "::1", "-j", "TOR_REDIRECT_V6"],
+        vec!["-t", "nat", "-D", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "::1", "-j", "TOR_SOCKS_V6"],
+        // Flush and delete our custom IPv6 chains
+        vec!["-t", "mangle", "-F", "TOR_REDIRECT_V6"],
+        vec!["-t", "mangle", "-X", "TOR_REDIRECT_V6"],
+        vec!["-t", "nat", "-F", "TOR_SOCKS_V6"],
+        vec!["-t", "nat", "-X", "TOR_SOCKS_V6"],
+    ];
+
+    for rule in &ipv6_cleanup_rules {
+        match Command::new("sudo")
+            .arg("ip6tables")
+            .args(rule)
+            .output() {
+            Ok(output) => {
+                if !output.status.success() {
+                    // It's OK if some rules don't exist to delete, just warn
+                    debug!("Warning during IPv6 ip6tables cleanup for rule '{:?}': {}", rule, String::from_utf8_lossy(&output.stderr));
+                } else {
+                    debug!("Successfully removed IPv6 ip6tables rule: {:?}", rule);
+                }
+            }
+            Err(e) => {
+                warn!("Failed to execute IPv6 ip6tables cleanup command: {}", e);
+                success = false;
+            }
+        }
+    }
+
+    // Also flush all rules in mangle and nat tables to ensure clean state for IPv4
+    let ipv4_flush_rules = vec![
         vec!["-t", "mangle", "-F"],
         vec!["-t", "nat", "-F"],
     ];
 
-    for rule in &flush_rules {
+    for rule in &ipv4_flush_rules {
         match Command::new("sudo")
             .arg("iptables")
             .args(rule)
             .output() {
             Ok(output) => {
                 if !output.status.success() {
-                    warn!("Failed to flush iptables table: {}", String::from_utf8_lossy(&output.stderr));
+                    warn!("Failed to flush IPv4 iptables table: {}", String::from_utf8_lossy(&output.stderr));
                     success = false;
                 } else {
-                    debug!("Successfully flushed iptables table: {:?}", rule);
+                    debug!("Successfully flushed IPv4 iptables table: {:?}", rule);
                 }
             }
             Err(e) => {
-                warn!("Failed to execute iptables flush command: {}", e);
+                warn!("Failed to execute IPv4 iptables flush command: {}", e);
                 success = false;
+            }
+        }
+    }
+
+    // Also flush all rules in mangle and nat tables to ensure clean state for IPv6
+    let ipv6_flush_rules = vec![
+        vec!["-t", "mangle", "-F"],
+        vec!["-t", "nat", "-F"],
+    ];
+
+    for rule in &ipv6_flush_rules {
+        match Command::new("sudo")
+            .arg("ip6tables")
+            .args(rule)
+            .output() {
+            Ok(output) => {
+                if !output.status.success() {
+                    warn!("Failed to flush IPv6 ip6tables table: {}", String::from_utf8_lossy(&output.stderr));
+                    // IPv6 failure is non-critical since IPv4 is the main concern
+                } else {
+                    debug!("Successfully flushed IPv6 ip6tables table: {:?}", rule);
+                }
+            }
+            Err(e) => {
+                warn!("Failed to execute IPv6 ip6tables flush command: {}", e);
+                // IPv6 failure is non-critical since IPv4 is the main concern
             }
         }
     }

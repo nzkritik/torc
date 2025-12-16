@@ -192,3 +192,68 @@
 2025-12-17 00:29:16.769 [INFO] - torc: Attempting to retrieve geo location for IP: 116.251.149.8
 2025-12-17 00:29:17.125 [INFO] - torc: Successfully retrieved geo location for IP 116.251.149.8: country=NZ, city=Auckland, region=Auckland, isp=AS55850 Mercury NZ Limited
 2025-12-17 00:29:17.465 [INFO] - torc: Attempting to retrieve external IP address
+2025-12-17 00:42:23.641 [INFO] - torc: Logger initialized for TORC application
+2025-12-17 00:42:23.641 [INFO] - torc: Starting TORC application
+2025-12-17 00:42:23.641 [INFO] - torc: Checking for unexpected shutdown or crash
+2025-12-17 00:42:23.645 [INFO] - torc: No unexpected shutdown detected - Tor service is not running
+2025-12-17 00:42:23.645 [INFO] - torc: Parsed command line arguments: Some(System { operation: Some(Status) })
+2025-12-17 00:42:23.645 [INFO] - torc: Executing System command with operation: Some(Status)
+2025-12-17 00:42:23.645 [INFO] - torc: Checking Tor Network Status
+2025-12-17 00:42:23.649 [INFO] - torc: Tor is installed: true
+2025-12-17 00:42:23.649 [INFO] - torc: Tor service is not running
+2025-12-17 00:42:23.649 [INFO] - torc: Fetching IP address information
+2025-12-17 00:42:23.659 [INFO] - torc: Attempting to retrieve external IP address
+2025-12-17 00:42:24.370 [INFO] - torc: Successfully retrieved external IP address: 116.251.149.8
+2025-12-17 00:42:24.370 [INFO] - torc: Attempting to retrieve geo location for IP: 116.251.149.8
+2025-12-17 00:42:24.955 [INFO] - torc: Successfully retrieved geo location for IP 116.251.149.8: country=NZ, city=Auckland, region=Auckland, isp=AS55850 Mercury NZ Limited
+2025-12-17 00:42:24.955 [INFO] - torc: Tor status check completed
+2025-12-17 00:42:24.955 [INFO] - torc: TORC application completed successfully
+2025-12-17 00:42:29.339 [INFO] - torc: Logger initialized for TORC application
+2025-12-17 00:42:29.339 [INFO] - torc: Starting TORC application
+2025-12-17 00:42:29.339 [INFO] - torc: Checking for unexpected shutdown or crash
+2025-12-17 00:42:29.339 [INFO] - torc: Logger initialized for TORC application
+2025-12-17 00:42:29.340 [INFO] - torc: Starting TORC application
+2025-12-17 00:42:29.340 [INFO] - torc: Checking for unexpected shutdown or crash
+2025-12-17 00:42:29.339 [INFO] - torc: Logger initialized for TORC application
+2025-12-17 00:42:29.340 [INFO] - torc: Starting TORC application
+2025-12-17 00:42:29.340 [INFO] - torc: Checking for unexpected shutdown or crash
+2025-12-17 00:42:29.344 [INFO] - torc: No unexpected shutdown detected - Tor service is not running
+2025-12-17 00:42:29.345 [INFO] - torc: No unexpected shutdown detected - Tor service is not running
+2025-12-17 00:42:29.345 [INFO] - torc: Parsed command line arguments: Some(System { operation: None })
+2025-12-17 00:42:29.345 [INFO] - torc: Executing System command with operation: None
+2025-12-17 00:42:29.345 [INFO] - torc: Showing interactive menu for System command
+2025-12-17 00:42:29.345 [INFO] - torc: No unexpected shutdown detected - Tor service is not running
+2025-12-17 00:42:29.346 [INFO] - torc: Parsed command line arguments: Some(Disk { operation: None })
+2025-12-17 00:42:29.346 [INFO] - torc: Executing Disk command with operation: None
+2025-12-17 00:42:29.346 [INFO] - torc: Showing disk operations help
+2025-12-17 00:42:29.800 [INFO] - torc: Attempting to retrieve external IP address
+2025-12-17 00:42:30.062 [INFO] - torc: Successfully retrieved external IP address: 116.251.149.8
+2025-12-17 00:42:30.062 [INFO] - torc: Attempting to retrieve geo location for IP: 116.251.149.8
+2025-12-17 00:42:30.687 [INFO] - torc: Successfully retrieved geo location for IP 116.251.149.8: country=NZ, city=Auckland, region=Auckland, isp=AS55850 Mercury NZ Limited
+2025-12-17 00:42:31.039 [INFO] - torc: Attempting to retrieve external IP address
+2025-12-17 00:42:31.299 [INFO] - torc: Successfully retrieved external IP address: 116.251.149.8
+2025-12-17 00:42:31.299 [INFO] - torc: Attempting to retrieve geo location for IP: 116.251.149.8
+2025-12-17 00:42:31.862 [INFO] - torc: Successfully retrieved geo location for IP 116.251.149.8: country=NZ, city=Auckland, region=Auckland, isp=AS55850 Mercury NZ Limited
+2025-12-17 00:42:32.220 [INFO] - torc: Attempting to retrieve external IP address
+2025-12-17 00:42:32.490 [INFO] - torc: Successfully retrieved external IP address: 116.251.149.8
+2025-12-17 00:42:32.490 [INFO] - torc: Attempting to retrieve geo location for IP: 116.251.149.8
+2025-12-17 00:42:33.064 [INFO] - torc: Successfully retrieved geo location for IP 116.251.149.8: country=NZ, city=Auckland, region=Auckland, isp=AS55850 Mercury NZ Limited
+2025-12-17 00:42:33.389 [INFO] - torc: Attempting to retrieve external IP address
+2025-12-17 00:42:33.650 [INFO] - torc: Successfully retrieved external IP address: 116.251.149.8
+2025-12-17 00:42:33.650 [INFO] - torc: Attempting to retrieve geo location for IP: 116.251.149.8
+2025-12-17 00:42:34.222 [INFO] - torc: Successfully retrieved geo location for IP 116.251.149.8: country=NZ, city=Auckland, region=Auckland, isp=AS55850 Mercury NZ Limited
+2025-12-17 00:42:34.558 [INFO] - torc: Attempting to retrieve external IP address
+2025-12-17 00:42:34.826 [INFO] - torc: Successfully retrieved external IP address: 116.251.149.8
+2025-12-17 00:42:34.826 [INFO] - torc: Attempting to retrieve geo location for IP: 116.251.149.8
+2025-12-17 00:42:35.622 [INFO] - torc: Successfully retrieved geo location for IP 116.251.149.8: country=NZ, city=Auckland, region=Auckland, isp=AS55850 Mercury NZ Limited
+2025-12-17 00:42:35.990 [INFO] - torc: Attempting to retrieve external IP address
+2025-12-17 00:42:36.315 [INFO] - torc: Successfully retrieved external IP address: 116.251.149.8
+2025-12-17 00:42:36.315 [INFO] - torc: Attempting to retrieve geo location for IP: 116.251.149.8
+2025-12-17 00:42:36.763 [INFO] - torc: Successfully retrieved geo location for IP 116.251.149.8: country=NZ, city=Auckland, region=Auckland, isp=AS55850 Mercury NZ Limited
+2025-12-17 00:42:37.082 [INFO] - torc: Attempting to retrieve external IP address
+2025-12-17 00:42:37.415 [INFO] - torc: Successfully retrieved external IP address: 116.251.149.8
+2025-12-17 00:42:37.415 [INFO] - torc: Attempting to retrieve geo location for IP: 116.251.149.8
+2025-12-17 00:42:37.886 [INFO] - torc: Successfully retrieved geo location for IP 116.251.149.8: country=NZ, city=Auckland, region=Auckland, isp=AS55850 Mercury NZ Limited
+2025-12-17 00:42:38.215 [INFO] - torc: Attempting to retrieve external IP address
+2025-12-17 00:42:38.589 [INFO] - torc: Successfully retrieved external IP address: 116.251.149.8
+2025-12-17 00:42:38.589 [INFO] - torc: Attempting to retrieve geo location for IP: 116.251.149.8
