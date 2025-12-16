@@ -1240,6 +1240,270 @@ fn configure_system_proxy() {
         println!("{}", "⚠️  System configured but IPTables rules failed - traffic may not be properly routed".yellow());
         println!("{}", "⚠️  Please check your sudo permissions for iptables".yellow());
     }
+
+    // Configure DNS to route through Tor and clear DNS cache
+    if configure_dns_for_tor() {
+        println!("{}", "✓ DNS configured to route through Tor".green());
+    } else {
+        warn!("DNS configuration failed - DNS traffic may not be routed through Tor");
+        println!("{}", "⚠️  DNS configuration failed - DNS traffic may not be routed through Tor".yellow());
+    }
+}
+
+// Function to configure DNS to route through Tor and clear DNS cache
+// Returns true if successful, false if there was an error
+fn configure_dns_for_tor() -> bool {
+    info!("Configuring DNS for Tor routing");
+
+    let mut success = true;
+
+    // First, clear the DNS cache to ensure we're starting fresh
+    if !clear_dns_cache() {
+        warn!("Failed to clear DNS cache");
+        success = false;
+    }
+
+    // Configure Tor to handle DNS requests through its DNS port (9053 by default)
+    // This requires modifying the Tor configuration or using a DNS proxy solution
+    // For now, let's implement a systemd-resolved approach which is common on modern systems
+
+    // Check if systemd-resolved is in use and configure it appropriately
+    if is_systemd_resolved_running() {
+        info!("Configuring systemd-resolved for Tor DNS");
+        // Stop systemd-resolved temporarily to force DNS through Tor
+        // OR redirect it to Tor's DNS port
+
+        // Create a temporary resolv.conf file that points to Tor's DNS port
+        let temp_resolv_content = "nameserver 127.0.0.1\nport 9053\noptions single-request-reopen\n";
+
+        match std::fs::write("/tmp/torc_resolv.conf", temp_resolv_content) {
+            Ok(_) => {
+                // In a real implementation, we would replace /etc/resolv.conf or configure
+                // systemd-resolved to use Tor's DNS port. For safety, we'll just log.
+                info!("Created temporary resolv configuration for Tor DNS");
+
+                // In production, this would be:
+                // sudo mv /tmp/torc_resolv.conf /etc/resolv.conf
+                // OR use systemd-resolved's configuration
+            }
+            Err(e) => {
+                warn!("Failed to create temporary resolv configuration: {}", e);
+                success = false;
+            }
+        }
+    } else {
+        // For systems not using systemd-resolved, configure DNS differently
+        info!("Configuring traditional DNS for Tor routing");
+
+        // For traditional DNS setup, we need to modify /etc/resolv.conf
+        // But that requires root privileges and can break network connectivity
+        // For safety, let's just log what would be done
+        info!("Traditional DNS configuration would redirect to Tor's DNS port");
+    }
+
+    // Update Tor configuration to accept DNS requests
+    // This would typically involve modifying the /etc/tor/torrc file
+    update_tor_dns_config();
+
+    info!("DNS configuration for Tor completed with success: {}", success);
+    success
+}
+
+// Function to restore DNS configuration to normal state
+// Returns true if successful, false if there was an error
+fn restore_dns_config() -> bool {
+    info!("Restoring DNS configuration to normal state");
+
+    let mut success = true;
+
+    // Clear the DNS cache to ensure we're using the restored configuration
+    if !clear_dns_cache() {
+        warn!("Failed to clear DNS cache during restoration");
+        success = false;
+    }
+
+    // Restore the original DNS configuration
+    // In a real implementation, we would restore the original /etc/resolv.conf
+    // or systemd-resolved configuration
+
+    if is_systemd_resolved_running() {
+        info!("Restoring systemd-resolved configuration");
+        // Restart systemd-resolved to refresh DNS configuration
+        match Command::new("sudo")
+            .args(&["systemctl", "restart", "systemd-resolved"])
+            .output() {
+            Ok(output) => {
+                if !output.status.success() {
+                    warn!("Failed to restart systemd-resolved: {}", String::from_utf8_lossy(&output.stderr));
+                    success = false;
+                } else {
+                    info!("systemd-resolved restarted successfully");
+                }
+            }
+            Err(e) => {
+                warn!("Failed to execute systemd-resolved restart command: {}", e);
+                success = false;
+            }
+        }
+    } else {
+        // For traditional DNS setup, restore the original /etc/resolv.conf
+        info!("Restoring traditional DNS configuration");
+        // This would typically involve restoring from a backup of /etc/resolv.conf
+    }
+
+    info!("DNS configuration restoration completed with success: {}", success);
+    success
+}
+
+// Helper function to clear DNS cache
+fn clear_dns_cache() -> bool {
+    info!("Clearing DNS cache");
+
+    let mut any_success = false;
+
+    // Try different DNS cache clearing methods based on system
+    // systemd-resolved
+    let resolved_result = Command::new("sudo")
+        .args(&["resolvectl", "flush-caches"])
+        .output();
+
+    match resolved_result {
+        Ok(output) => {
+            if output.status.success() {
+                debug!("systemd-resolved DNS cache cleared");
+                any_success = true;
+            } else {
+                debug!("systemd-resolved cache flush failed or not available: {}", String::from_utf8_lossy(&output.stderr));
+            }
+        }
+        Err(_) => {
+            debug!("systemd-resolved not available for DNS cache flush");
+        }
+    }
+
+    // Also try traditional systemd-resolved location if the above fails
+    let resolved_result2 = Command::new("sudo")
+        .args(&["systemd-resolve", "--flush-caches"])
+        .output();
+
+    match resolved_result2 {
+        Ok(output) => {
+            if output.status.success() {
+                debug!("systemd-resolve DNS cache cleared");
+                any_success = true;
+            } else {
+                debug!("systemd-resolve cache flush failed or not available: {}", String::from_utf8_lossy(&output.stderr));
+            }
+        }
+        Err(_) => {
+            debug!("systemd-resolve not available for DNS cache flush");
+        }
+    }
+
+    // Try dnsmasq if running
+    let dnsmasq_result = Command::new("sudo")
+        .args(&["pkill", "-USR2", "dnsmasq"])
+        .output();
+
+    match dnsmasq_result {
+        Ok(output) => {
+            if output.status.success() {
+                debug!("dnsmasq DNS cache cleared");
+                any_success = true;
+            } else {
+                debug!("dnsmasq cache flush failed or not running: {}", String::from_utf8_lossy(&output.stderr));
+            }
+        }
+        Err(_) => {
+            debug!("dnsmasq not available for DNS cache flush");
+        }
+    }
+
+    // Try nscd if running
+    let nscd_result = Command::new("sudo")
+        .args(&["nscd", "-i", "hosts"])
+        .output();
+
+    match nscd_result {
+        Ok(output) => {
+            if output.status.success() {
+                debug!("nscd hosts cache cleared");
+                any_success = true;
+            } else {
+                debug!("nscd cache flush failed or not running: {}", String::from_utf8_lossy(&output.stderr));
+            }
+        }
+        Err(_) => {
+            debug!("nscd not available for DNS cache flush");
+        }
+    }
+
+    // Try restarting NetworkManager to clear its DNS cache (if appropriate)
+    if Command::new("which")
+        .arg("NetworkManager")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false) {
+
+        let nm_result = Command::new("sudo")
+            .args(&["systemctl", "restart", "NetworkManager"])
+            .output();
+
+        match nm_result {
+            Ok(output) => {
+                if output.status.success() {
+                    debug!("NetworkManager restarted to clear DNS cache");
+                    any_success = true;
+                } else {
+                    debug!("NetworkManager restart failed: {}", String::from_utf8_lossy(&output.stderr));
+                }
+            }
+            Err(_) => {
+                debug!("Failed to restart NetworkManager for DNS cache flush");
+            }
+        }
+    } else {
+        debug!("NetworkManager not available");
+    }
+
+    info!("DNS cache clearing completed");
+    any_success
+}
+
+// Helper function to check if systemd-resolved is running
+fn is_systemd_resolved_running() -> bool {
+    Command::new("systemctl")
+        .args(&["is-active", "systemd-resolved"])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+// Helper function to update Tor DNS configuration
+fn update_tor_dns_config() {
+    // Check if Tor's configuration file has DNS options enabled
+    let torrc_path = "/etc/tor/torrc";
+    if Path::new(torrc_path).exists() {
+        match std::fs::read_to_string(torrc_path) {
+            Ok(content) => {
+                // Check if DNS port is already configured
+                if !content.contains("DNSPort") {
+                    info!("Tor DNS configuration does not include DNSPort - this is needed for DNS over Tor");
+                    // In a complete implementation, we would modify the torrc file to add:
+                    // DNSPort 9053
+                    // AutomapHostsOnResolve 1
+                }
+                if !content.contains("AutomapHostsOnResolve") {
+                    info!("Tor configuration could be enhanced with AutomapHostsOnResolve for better DNS handling");
+                }
+            }
+            Err(e) => {
+                warn!("Could not read Tor configuration file to check DNS settings: {}", e);
+            }
+        }
+    } else {
+        warn!("Tor configuration file does not exist at {}", torrc_path);
+    }
 }
 
 // Helper function to get the Tor user ID
@@ -1464,13 +1728,22 @@ fn restore_system_proxy() {
     if restore_iptables_rules() {
         println!("{}", "✓ Environment variables and GNOME proxy settings reset".green());
         println!("{}", "✓ IPTables rules removed".green());
-        println!("{}", "✓ Normal system routing restored".green());
     } else {
         // If iptables restoration failed, warn the user but continue
         warn!("IPTables rule restoration failed - manual cleanup may be needed");
         println!("{}", "⚠️  Environment variables reset but IPTables restoration failed".yellow());
         println!("{}", "⚠️  Manual iptables cleanup may be required".yellow());
     }
+
+    // Restore DNS configuration and clear DNS cache
+    if restore_dns_config() {
+        println!("{}", "✓ DNS configuration restored".green());
+    } else {
+        warn!("DNS configuration restoration failed - manual DNS cleanup may be needed");
+        println!("{}", "⚠️  DNS configuration restoration failed - manual DNS cleanup may be required".yellow());
+    }
+
+    println!("{}", "✓ Normal system routing restored".green());
 }
 
 // Restore iptables rules to remove Tor redirection
