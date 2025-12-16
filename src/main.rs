@@ -677,60 +677,56 @@ fn is_valid_ip(ip_str: &str) -> bool {
 async fn get_geo_location(ip: &str) -> Result<GeoIPInfo> {
     let client = reqwest::Client::new();
 
-    // Use ipapi.co for geo location lookup
-    let url = format!("https://ipapi.co/{}/json/", ip);
+    // Try IP geolocation services in order of preference
+    let services = [
+        ("https://ipapi.co/{}/json/", vec!["country_name", "city", "region", "org"]),
+        ("https://ipinfo.io/{}/json", vec!["country", "city", "region", "org"])
+    ];
 
-    match client.get(&url).send().await {
-        Ok(response) => {
-            if response.status().is_success() {
-                match response.json::<serde_json::Value>().await {
-                    Ok(geo_data) => {
-                        let country = geo_data.get("country_name").and_then(|v| v.as_str()).map(|s| s.to_string());
-                        let city = geo_data.get("city").and_then(|v| v.as_str()).map(|s| s.to_string());
-                        let region = geo_data.get("region").and_then(|v| v.as_str()).map(|s| s.to_string());
-                        let isp = geo_data.get("org").and_then(|v| v.as_str()).map(|s| s.to_string());
+    for (url_template, fields) in &services {
+        let url = url_template.replace("{}", ip);
 
-                        Ok(GeoIPInfo {
-                            ip: ip.to_string(),
-                            country,
-                            city,
-                            region,
-                            isp,
-                        })
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to parse geo location data: {}", e);
-                        Ok(GeoIPInfo {
-                            ip: ip.to_string(),
-                            country: None,
-                            city: None,
-                            region: None,
-                            isp: None,
-                        })
+        match client.get(&url).send().await {
+            Ok(response) => {
+                if response.status().is_success() {
+                    match response.json::<serde_json::Value>().await {
+                        Ok(geo_data) => {
+                            let country = geo_data.get(fields[0]).and_then(|v| v.as_str()).map(|s| s.to_string());
+                            let city = geo_data.get(fields[1]).and_then(|v| v.as_str()).map(|s| s.to_string());
+                            let region = geo_data.get(fields[2]).and_then(|v| v.as_str()).map(|s| s.to_string());
+                            let isp = geo_data.get(fields[3]).and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                            if country.is_some() || city.is_some() || region.is_some() || isp.is_some() {
+                                return Ok(GeoIPInfo {
+                                    ip: ip.to_string(),
+                                    country,
+                                    city,
+                                    region,
+                                    isp,
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to parse geo location data from {}: {}", url, e);
+                        }
                     }
                 }
-            } else {
-                eprintln!("Failed to get geo location data for IP: {}", ip);
-                Ok(GeoIPInfo {
-                    ip: ip.to_string(),
-                    country: None,
-                    city: None,
-                    region: None,
-                    isp: None,
-                })
+            }
+            Err(e) => {
+                eprintln!("Failed to fetch geo location data from {}: {}", url, e);
             }
         }
-        Err(e) => {
-            eprintln!("Failed to fetch geo location data: {}", e);
-            Ok(GeoIPInfo {
-                ip: ip.to_string(),
-                country: None,
-                city: None,
-                region: None,
-                isp: None,
-            })
-        }
     }
+
+    // If all services failed, return a basic GeoIPInfo with just the IP
+    eprintln!("Failed to get geo location data for IP: {} from all services", ip);
+    Ok(GeoIPInfo {
+        ip: ip.to_string(),
+        country: None,
+        city: None,
+        region: None,
+        isp: None,
+    })
 }
 
 // Function to display the current IP address and location
