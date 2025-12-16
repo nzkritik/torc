@@ -411,6 +411,9 @@ async fn connect_to_tor() -> Result<()> {
                 configure_system_proxy();
                 info!("System proxy configured for Tor");
 
+                // Check Tor configuration for transparent proxying capabilities
+                check_tor_transparent_proxy_config();
+
                 // Perform connection verification
                 verify_tor_connection();
                 info!("Connection verification completed");
@@ -1689,6 +1692,55 @@ fn refresh_dns_resolver() {
         Err(e) => {
             debug!("Failed to reload systemd-resolved: {}", e);
         }
+    }
+}
+
+// Function to check Tor's transparent proxy configuration
+fn check_tor_transparent_proxy_config() {
+    info!("Checking Tor transparent proxy configuration");
+
+    // Check if Tor's configuration includes HTTP tunnel port for transparent proxying
+    let torrc_path = "/etc/tor/torrc";
+    if Path::new(torrc_path).exists() {
+        match std::fs::read_to_string(torrc_path) {
+            Ok(config) => {
+                // Look for HTTPTunnelPort directive
+                let http_tunnel_exists = config.lines().any(|line| {
+                    let trimmed = line.trim();
+                    trimmed.starts_with("HTTPTunnelPort") ||
+                    trimmed.starts_with("SocksPort")
+                });
+
+                if !http_tunnel_exists {
+                    // HTTPTunnelPort is not configured, which is needed for HTTP proxy functionality
+                    info!("Tor HTTPTunnelPort is not configured - only SOCKS proxy is available");
+                    println!("{}", "ℹ️  Tor HTTP tunneling not configured - only SOCKS proxy available".blue());
+                    println!("{}", "ℹ️  For full transparent proxying, add 'HTTPTunnelPort 8118' to /etc/tor/torrc".blue());
+                } else {
+                    info!("Tor HTTPTunnelPort is configured - HTTP tunneling available");
+                }
+
+                // Check for TransPort (transparent proxy port) configuration
+                let trans_port_exists = config.lines().any(|line| {
+                    let trimmed = line.trim();
+                    trimmed.starts_with("TransPort") ||
+                    trimmed.starts_with("DNSPort")
+                });
+
+                if trans_port_exists {
+                    info!("Tor TransPort/DNSPort configured - transparent proxying capability available");
+                    println!("{}", "ℹ️  Tor transparent proxying is available with iptables rules".blue());
+                } else {
+                    info!("Tor TransPort/DNSPort not configured - transparent iptables routing may be limited");
+                }
+            },
+            Err(e) => {
+                warn!("Cannot read Tor configuration file to check transparent proxy settings: {}", e);
+            }
+        }
+    } else {
+        info!("Tor configuration file not found at {}", torrc_path);
+        println!("{}", "⚠️  Tor config file not found - check /etc/tor/torrc for proxy settings".yellow());
     }
 }
 
