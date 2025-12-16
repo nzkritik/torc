@@ -18,7 +18,21 @@ use chrono::Local;
 
 // Initialize logging system
 fn init_logger() {
-    Builder::new()
+    // Create a file appender for logging
+    use env_logger::WriteStyle;
+    use std::fs::OpenOptions;
+
+    // Open log file in append mode
+    let log_file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(true)
+        .open("torc.log")
+        .expect("Failed to create log file");
+
+    // Create a custom logger builder
+    let mut builder = Builder::new();
+    builder
         .format(|buf, record| {
             writeln!(buf,
                 "{} [{}] - {}: {}",
@@ -30,8 +44,13 @@ fn init_logger() {
         })
         .filter(None, log::LevelFilter::Info)  // Default to Info level
         .parse_env("TORC_LOG")  // Allow override via TORC_LOG environment variable
-        .init();
+        .target(env_logger::Target::Pipe(Box::new(log_file)))  // Log to file instead of stdout
+        .write_style(WriteStyle::Never);  // Never write to stdout
 
+    builder.init();
+
+    // Since we're logging to a file, we need to manually log this to file as well
+    // The info! macro will now log to file since we've initialized the logger
     info!("Logger initialized for TORC application");
 }
 

@@ -1,0 +1,72 @@
+2025-12-17 00:14:29.553 [INFO] - torc: Logger initialized for TORC application
+2025-12-17 00:14:29.553 [INFO] - torc: Starting TORC application
+2025-12-17 00:14:29.553 [INFO] - torc: Checking for unexpected shutdown or crash
+2025-12-17 00:14:29.558 [INFO] - torc: No unexpected shutdown detected - Tor service is not running
+2025-12-17 00:14:29.558 [INFO] - torc: Parsed command line arguments: Some(System { operation: Some(Status) })
+2025-12-17 00:14:29.558 [INFO] - torc: Executing System command with operation: Some(Status)
+2025-12-17 00:14:29.558 [INFO] - torc: Checking Tor Network Status
+2025-12-17 00:14:29.562 [INFO] - torc: Tor is installed: true
+2025-12-17 00:14:29.562 [INFO] - torc: Tor service is not running
+2025-12-17 00:14:29.562 [INFO] - torc: Fetching IP address information
+2025-12-17 00:14:29.573 [INFO] - torc: Attempting to retrieve external IP address
+2025-12-17 00:14:30.317 [INFO] - torc: Successfully retrieved external IP address: 116.251.149.8
+2025-12-17 00:14:30.317 [INFO] - torc: Attempting to retrieve geo location for IP: 116.251.149.8
+2025-12-17 00:14:30.943 [INFO] - torc: Successfully retrieved geo location for IP 116.251.149.8: country=NZ, city=Auckland, region=Auckland, isp=AS55850 Mercury NZ Limited
+2025-12-17 00:14:30.943 [INFO] - torc: Tor status check completed
+2025-12-17 00:14:30.943 [INFO] - torc: TORC application completed successfully
+2025-12-17 00:14:39.465 [INFO] - torc: Logger initialized for TORC application
+2025-12-17 00:14:39.465 [INFO] - torc: Starting TORC application
+2025-12-17 00:14:39.465 [INFO] - torc: Checking for unexpected shutdown or crash
+2025-12-17 00:14:39.469 [INFO] - torc: No unexpected shutdown detected - Tor service is not running
+2025-12-17 00:14:39.469 [INFO] - torc: Parsed command line arguments: None
+2025-12-17 00:14:39.469 [INFO] - torc: Showing interactive menu as no command specified
+2025-12-17 00:14:39.885 [INFO] - torc: Attempting to retrieve external IP address
+2025-12-17 00:14:40.146 [INFO] - torc: Successfully retrieved external IP address: 116.251.149.8
+2025-12-17 00:14:40.146 [INFO] - torc: Attempting to retrieve geo location for IP: 116.251.149.8
+2025-12-17 00:14:40.719 [INFO] - torc: Successfully retrieved geo location for IP 116.251.149.8: country=NZ, city=Auckland, region=Auckland, isp=AS55850 Mercury NZ Limited
+2025-12-17 00:14:41.065 [INFO] - torc: Attempting to retrieve external IP address
+2025-12-17 00:14:41.339 [INFO] - torc: Successfully retrieved external IP address: 116.251.149.8
+2025-12-17 00:14:41.339 [INFO] - torc: Attempting to retrieve geo location for IP: 116.251.149.8
+2025-12-17 00:14:41.919 [INFO] - torc: Successfully retrieved geo location for IP 116.251.149.8: country=NZ, city=Auckland, region=Auckland, isp=AS55850 Mercury NZ Limited
+2025-12-17 00:14:42.249 [INFO] - torc: Attempting to retrieve external IP address
+2025-12-17 00:14:57.287 [INFO] - torc: Logger initialized for TORC application
+2025-12-17 00:14:57.288 [INFO] - torc: Starting TORC application
+2025-12-17 00:14:57.288 [INFO] - torc: Checking for unexpected shutdown or crash
+2025-12-17 00:14:57.291 [INFO] - torc: No unexpected shutdown detected - Tor service is not running
+2025-12-17 00:14:57.292 [INFO] - torc: Parsed command line arguments: Some(System { operation: Some(Status) })
+2025-12-17 00:14:57.292 [INFO] - torc: Executing System command with operation: Some(Status)
+2025-12-17 00:14:57.292 [INFO] - torc: Checking Tor Network Status
+2025-12-17 00:14:57.296 [INFO] - torc: Tor is installed: true
+2025-12-17 00:14:57.296 [INFO] - torc: Tor service is not running
+2025-12-17 00:14:57.296 [INFO] - torc: Fetching IP address information
+2025-12-17 00:14:57.304 [INFO] - torc: Attempting to retrieve external IP address
+2025-12-17 00:14:57.304 [DEBUG] - torc: Trying IP service #1: https://api.ipify.org
+2025-12-17 00:14:57.305 [DEBUG] - reqwest::connect: starting new connection: https://api.ipify.org/
+2025-12-17 00:14:57.567 [DEBUG] - torc: Retrieved IP from https://api.ipify.org: 116.251.149.8
+2025-12-17 00:14:57.567 [INFO] - torc: Successfully retrieved external IP address: 116.251.149.8
+2025-12-17 00:14:57.567 [INFO] - torc: Attempting to retrieve geo location for IP: 116.251.149.8
+2025-12-17 00:14:57.576 [DEBUG] - torc: Trying geo location service #1: https://ipapi.co/116.251.149.8/json/
+2025-12-17 00:14:57.576 [DEBUG] - reqwest::connect: starting new connection: https://ipapi.co/
+2025-12-17 00:14:57.839 [DEBUG] - torc: Service https://ipapi.co/116.251.149.8/json/ returned non-success status: 429 Too Many Requests
+2025-12-17 00:14:57.839 [DEBUG] - torc: Trying geo location service #2: https://ipinfo.io/116.251.149.8/json
+2025-12-17 00:14:57.839 [DEBUG] - reqwest::connect: starting new connection: https://ipinfo.io/
+2025-12-17 00:14:58.129 [DEBUG] - torc: Successfully retrieved geo data from https://ipinfo.io/116.251.149.8/json
+2025-12-17 00:14:58.129 [INFO] - torc: Successfully retrieved geo location for IP 116.251.149.8: country=NZ, city=Auckland, region=Auckland, isp=AS55850 Mercury NZ Limited
+2025-12-17 00:14:58.130 [INFO] - torc: Tor status check completed
+2025-12-17 00:14:58.130 [INFO] - torc: TORC application completed successfully
+2025-12-17 00:17:21.192 [INFO] - torc: Logger initialized for TORC application
+2025-12-17 00:17:21.192 [INFO] - torc: Starting TORC application
+2025-12-17 00:17:21.192 [INFO] - torc: Checking for unexpected shutdown or crash
+2025-12-17 00:17:21.196 [INFO] - torc: No unexpected shutdown detected - Tor service is not running
+2025-12-17 00:17:21.197 [INFO] - torc: Parsed command line arguments: Some(System { operation: Some(Status) })
+2025-12-17 00:17:21.197 [INFO] - torc: Executing System command with operation: Some(Status)
+2025-12-17 00:17:21.197 [INFO] - torc: Checking Tor Network Status
+2025-12-17 00:17:21.201 [INFO] - torc: Tor is installed: true
+2025-12-17 00:17:21.201 [INFO] - torc: Tor service is not running
+2025-12-17 00:17:21.201 [INFO] - torc: Fetching IP address information
+2025-12-17 00:17:21.210 [INFO] - torc: Attempting to retrieve external IP address
+2025-12-17 00:17:21.474 [INFO] - torc: Successfully retrieved external IP address: 116.251.149.8
+2025-12-17 00:17:21.474 [INFO] - torc: Attempting to retrieve geo location for IP: 116.251.149.8
+2025-12-17 00:17:22.062 [INFO] - torc: Successfully retrieved geo location for IP 116.251.149.8: country=NZ, city=Auckland, region=Auckland, isp=AS55850 Mercury NZ Limited
+2025-12-17 00:17:22.063 [INFO] - torc: Tor status check completed
+2025-12-17 00:17:22.063 [INFO] - torc: TORC application completed successfully

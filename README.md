@@ -141,15 +141,15 @@ Currently targeting Arch-based and Debian-based Linux distributions with plans t
 - [ ] Add integration with NetworkManager for better network management
 - [ ] Implement automatic restart on system boot (when configured)
 - [ ] Add support for multiple Tor configurations/profiles
-- [ ] Implement proper logging system
+- [x] Implement proper logging system
 
 ### Backup & Restore System
-- [ ] Implement actual network configuration restoration (currently uses placeholder functions)
-- [ ] Add backup of routing table with `ip route` commands
-- [ ] Add backup of DNS configuration in `/etc/resolv.conf`
-- [ ] Add backup of firewall rules with `iptables` commands
-- [ ] Add backup of network interface states
-- [ ] Implement restore functionality for all backed up configurations
+- [x] Implement actual network configuration restoration (currently uses placeholder functions)
+- [x] Add backup of routing table with `ip route` commands
+- [x] Add backup of DNS configuration in `/etc/resolv.conf`
+- [x] Add backup of firewall rules with `iptables` commands
+- [x] Add backup of network interface states
+- [x] Implement restore functionality for all backed up configurations
 
 ### Platform Support
 - [ ] Add support for other major Linux distributions (Fedora, openSUSE, etc.)
@@ -158,12 +158,12 @@ Currently targeting Arch-based and Debian-based Linux distributions with plans t
 - [ ] Add support for containerized environments
 
 ### User Experience
-- [ ] Add more detailed status information showing exit node location
 - [ ] Implement bandwidth monitoring
 - [ ] Add configuration file support for custom settings
 - [ ] Create desktop notification system for connection status changes
 - [ ] Add support for selecting specific Tor circuits or exit nodes
 - [ ] Implement kill switch functionality to block all traffic if Tor connection drops
+- [x] Add system information display to main menu (OS, Host, Kernel)
 
 ### Testing & Quality
 - [ ] Add comprehensive unit tests for all functionality
