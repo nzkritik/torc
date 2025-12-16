@@ -1,13 +1,14 @@
 use std::io::{self, Write};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::path::Path;
 use std::fs;
 use colored::*;
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 use serde_json;
+use std::sync::LazyLock;
 
 #[derive(Parser)]
 #[command(name = "torc")]
@@ -139,14 +140,17 @@ fn check_for_unexpected_shutdown() -> Result<()> {
 // Function to restore system state if needed
 fn restore_system_state_if_needed() -> Result<()> {
     // Check if we have system state information in our global backup
-    unsafe {
-        if SYSTEM_STATE_BACKUP.is_some() {
-            // We have state information, so restore it
-            restore_system_state()?;
-        } else {
-            // No state backup available, restore basic proxy settings
-            restore_system_proxy();
-        }
+    let has_backup = {
+        let backup = SYSTEM_STATE_BACKUP.lock().unwrap();
+        backup.is_some()
+    };
+
+    if has_backup {
+        // We have state information, so restore it
+        restore_system_state()?;
+    } else {
+        // No state backup available, restore basic proxy settings
+        restore_system_proxy();
     }
 
     Ok(())
@@ -606,8 +610,8 @@ struct SystemNetworkState {
     network_interfaces: Vec<String>,
 }
 
-// Global variable to store the backup of system state
-static mut SYSTEM_STATE_BACKUP: Option<SystemNetworkState> = None;
+// Global variable to store the backup of system state using thread-safe approach
+static SYSTEM_STATE_BACKUP: LazyLock<Mutex<Option<SystemNetworkState>>> = LazyLock::new(|| Mutex::new(None));
 
 fn backup_system_state() -> Result<SystemNetworkState> {
     println!("{}", "Backing up current system network state...".yellow());
@@ -635,8 +639,9 @@ fn backup_system_state() -> Result<SystemNetworkState> {
         network_interfaces,
     };
 
-    unsafe {
-        SYSTEM_STATE_BACKUP = Some(state.clone());
+    {
+        let mut backup = SYSTEM_STATE_BACKUP.lock().unwrap();
+        *backup = Some(state.clone());
     }
 
     println!("{}", "✓ System network state backed up successfully".green());
@@ -907,33 +912,39 @@ fn restore_system_proxy() {
 fn restore_system_state() -> Result<()> {
     println!("{}", "Restoring system network state from backup...".yellow());
 
-    unsafe {
-        if let Some(state) = &SYSTEM_STATE_BACKUP {
-            // Restore proxy settings
-            restore_proxy_settings(&state.proxy_settings)?;
+    let state = {
+        let backup = SYSTEM_STATE_BACKUP.lock().unwrap();
+        backup.clone()
+    };
 
-            // Restore firewall rules
-            restore_firewall_rules(&state.firewall_rules)?;
+    if let Some(state) = &state {
+        // Restore proxy settings
+        restore_proxy_settings(&state.proxy_settings)?;
 
-            // Restore DNS servers
-            restore_dns_servers(&state.dns_servers)?;
+        // Restore firewall rules
+        restore_firewall_rules(&state.firewall_rules)?;
 
-            // Restore routing table
-            restore_routing_table(&state.routing_table)?;
+        // Restore DNS servers
+        restore_dns_servers(&state.dns_servers)?;
 
-            // Restore network interfaces
-            restore_network_interfaces(&state.network_interfaces)?;
+        // Restore routing table
+        restore_routing_table(&state.routing_table)?;
 
-            println!("{}", "✓ System network state restored successfully".green());
+        // Restore network interfaces
+        restore_network_interfaces(&state.network_interfaces)?;
 
-            // Clear the backup
-            SYSTEM_STATE_BACKUP = None;
+        println!("{}", "✓ System network state restored successfully".green());
 
-            Ok(())
-        } else {
-            println!("{}", "⚠️  No system state backup found to restore".yellow());
-            Ok(())
+        // Clear the backup
+        {
+            let mut backup = SYSTEM_STATE_BACKUP.lock().unwrap();
+            *backup = None;
         }
+
+        Ok(())
+    } else {
+        println!("{}", "⚠️  No system state backup found to restore".yellow());
+        Ok(())
     }
 }
 
