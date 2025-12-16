@@ -227,7 +227,7 @@ async fn show_menu() {
     println!("{}", "TORC - Tor Network Connector".green().bold());
 
     // Display system information in brackets next to the title
-    println!("{} [{}]", "=".repeat(25).cyan(), sys_info.cyan());
+    println!("[{}]", sys_info.pink());
 
     println!("{}", "1. 🔗 Connect to Tor Network".cyan());
     println!("{}", "2. ❌ Disconnect from Tor Network".red());
