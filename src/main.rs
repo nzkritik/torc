@@ -79,11 +79,6 @@ enum Commands {
         #[command(subcommand)]
         operation: Option<SystemOps>,
     },
-    /// Handle disk encryption tasks
-    Disk {
-        #[command(subcommand)]
-        operation: Option<DiskOps>,
-    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -94,16 +89,6 @@ enum SystemOps {
     Disconnect,
     /// Check the Tor network status
     Status,
-}
-
-#[derive(Subcommand, Debug)]
-enum DiskOps {
-    /// Encrypt a disk partition
-    Encrypt { path: String },
-    /// Decrypt a disk partition
-    Decrypt { path: String },
-    /// Check encryption status of a disk partition
-    Status { path: String },
 }
 
 #[tokio::main]
@@ -129,22 +114,6 @@ async fn main() -> Result<()> {
                     info!("Showing interactive menu for System command");
                     show_interactive_menu().await? // Show menu if no sub-operation specified
                 },
-            }
-        },
-        Some(Commands::Disk { operation }) => {
-            info!("Executing Disk command with operation: {:?}", operation);
-            match operation {
-                Some(DiskOps::Encrypt { path }) => encrypt_disk(path)?,
-                Some(DiskOps::Decrypt { path }) => decrypt_disk(path)?,
-                Some(DiskOps::Status { path }) => check_disk_encryption_status(path)?,
-                None => {
-                    info!("Showing disk operations help");
-                    println!("{}", "Disk operations:".cyan());
-                    println!("{}", "  encrypt <path> - Encrypt a disk partition".cyan());
-                    println!("{}", "  decrypt <path> - Decrypt a disk partition".cyan());
-                    println!("{}", "  status <path>  - Check encryption status".cyan());
-                    return Ok(());
-                }
             }
         },
         None => {
@@ -2893,111 +2862,4 @@ fn restore_network_interfaces(interfaces: &[String]) -> Result<()> {
 
     // In a real implementation, would restore the actual network interface configurations
     Ok(())
-}
-
-// Disk encryption functions
-fn encrypt_disk(path: &str) -> Result<()> {
-    println!("{}", format!("Encrypting disk partition: {}", path).yellow());
-
-    // Validate the path exists
-    if !std::path::Path::new(path).exists() {
-        println!("{}", format!("Error: Path {} does not exist", path).red());
-        return Ok(());
-    }
-
-    // Check if cryptsetup is available
-    print!("{}", "🔍 Checking if cryptsetup is installed... ");
-    if is_cryptsetup_installed() {
-        println!("{}", "✅".green());
-
-        println!("{}", "⚠️  Warning: Disk encryption will permanently modify the partition.".red());
-        println!("{}", "⚠️  All data on the partition will be lost. Backup any important data.".red());
-
-        print!("{}", "Proceed with encryption? (yes/no): ".cyan());
-        io::stdout().flush().unwrap();
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-
-        if input.trim().to_lowercase() == "yes" || input.trim().to_lowercase() == "y" {
-            println!("{}", "🔐 Initializing encryption process...".yellow());
-
-            // In a real implementation, this would call cryptsetup to encrypt the device
-            // For demo purposes, we'll simulate the process
-            println!("{}", "🔒 Encryption process completed successfully!".green());
-            println!("{}", format!("Partition {} is now encrypted.", path).green());
-        } else {
-            println!("{}", "Encryption cancelled by user.".yellow());
-        }
-    } else {
-        println!("{}", "❌".red());
-        println!("{}", "cryptsetup is not installed. Please install it using your package manager (e.g., 'sudo pacman -S cryptsetup' on Arch Linux)".red());
-    }
-    Ok(())
-}
-
-fn decrypt_disk(path: &str) -> Result<()> {
-    println!("{}", format!("Decrypting disk partition: {}", path).yellow());
-
-    // Validate the path exists
-    if !std::path::Path::new(path).exists() {
-        println!("{}", format!("Error: Path {} does not exist", path).red());
-        return Ok(());
-    }
-
-    // Check if cryptsetup is available
-    print!("{}", "🔍 Checking if cryptsetup is installed... ");
-    if is_cryptsetup_installed() {
-        println!("{}", "✅".green());
-
-        println!("{}", "🔓 Attempting to decrypt the encrypted partition...".yellow());
-
-        // In a real implementation, this would call cryptsetup to decrypt the device
-        // For demo purposes, we'll simulate the process
-        println!("{}", "🔑 Decryption process completed successfully!".green());
-        println!("{}", format!("Partition {} is now decrypted.", path).green());
-    } else {
-        println!("{}", "❌".red());
-        println!("{}", "cryptsetup is not installed. Please install it using your package manager (e.g., 'sudo pacman -S cryptsetup' on Arch Linux)".red());
-    }
-    Ok(())
-}
-
-fn check_disk_encryption_status(path: &str) -> Result<()> {
-    println!("{}", format!("Checking encryption status for: {}", path).cyan());
-
-    // Validate the path exists
-    if !std::path::Path::new(path).exists() {
-        println!("{}", format!("Error: Path {} does not exist", path).red());
-        return Ok(());
-    }
-
-    // Check if the partition appears to be encrypted
-    // In a real implementation, this would check actual encryption metadata
-    println!("{}", "🔍 Analyzing partition properties...".yellow());
-
-    // For demo purposes, we'll guess based on some criteria
-    if path.contains("enc") || path.contains("crypt") {
-        println!("{}", format!("Status: 🔒 {} appears to be encrypted", path).green());
-    } else {
-        println!("{}", format!("Status: 🔓 {} does not appear to be encrypted", path).red());
-    }
-
-    // Additional information
-    println!("{}", "Additional analysis completed.".green());
-    Ok(())
-}
-
-fn is_cryptsetup_installed() -> bool {
-    let output = Command::new("which")
-        .arg("cryptsetup")
-        .output();
-
-    match output {
-        Ok(output) => output.status.success(),
-        Err(e) => {
-            eprintln!("Warning: Could not check if cryptsetup is installed: {}", e);
-            false
-        },
-    }
 }

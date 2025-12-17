@@ -18,9 +18,9 @@ fn test_system_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn test_disk_command() -> Result<(), Box<dyn std::error::Error>> {
+fn test_system_status_command() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin("torc")?;
-    cmd.arg("disk");
+    cmd.arg("system").arg("status");
     cmd.assert().success();
     Ok(())
 }
