@@ -1861,15 +1861,52 @@ fn check_tor_transparent_proxy_config() {
                 // Check for TransPort (transparent proxy port) configuration (case-insensitive)
                 let trans_port_exists = config.lines().any(|line| {
                     let trimmed = line.trim().to_lowercase();
-                    trimmed.starts_with("trans") ||
+                    trimmed.starts_with("transport")
+                });
+
+                // Check for DNSPort configuration (critical for DNS leak protection)
+                let dns_port_exists = config.lines().any(|line| {
+                    let trimmed = line.trim().to_lowercase();
                     trimmed.starts_with("dnsport")
                 });
 
                 if trans_port_exists {
-                    info!("Tor TransPort/DNSPort configured - transparent proxying capability available");
+                    info!("Tor TransPort configured - transparent proxying capability available");
                     println!("{}", "ℹ️  Tor transparent proxying is available with iptables rules".blue());
                 } else {
-                    info!("Tor TransPort/DNSPort not configured - transparent iptables routing may be limited");
+                    info!("Tor TransPort not configured - transparent iptables routing may be limited");
+                    println!("{}", "💡 Add 'TransPort 9040' to /etc/tor/torrc for transparent proxying".blue());
+                }
+
+                // Check if DNSPort is configured (essential for DNS leak protection)
+                if !dns_port_exists {
+                    warn!("Tor DNSPort is not configured - this is critical for DNS leak protection");
+                    println!("{}", "⚠️  Tor DNSPort not configured - add 'DNSPort 53' to /etc/tor/torrc".yellow());
+                    println!("{}", "💡 For complete DNS leak protection, add 'DNSPort 53' and 'AutomapHostsOnResolve 1'".blue());
+
+                    // Try to auto-configure DNS if running with sufficient privileges
+                    if let Ok(_) = std::env::var("USER") {
+                        if std::process::Command::new("id")
+                            .arg("-u")
+                            .output()
+                            .map(|o| o.status.success())
+                            .unwrap_or(false) {
+                                auto_configure_tor_dns_settings(torrc_path);
+                            }
+                    }
+                } else {
+                    info!("Tor DNSPort is configured - DNS leak protection is enabled");
+                }
+
+                // Check for AutomapHostsOnResolve setting (important for DNS handling)
+                let automap_exists = config.lines().any(|line| {
+                    let trimmed = line.trim().to_lowercase();
+                    trimmed.starts_with("automaphostsonresolve")
+                });
+
+                if !automap_exists {
+                    info!("Tor configuration could be enhanced with AutomapHostsOnResolve for better DNS handling");
+                    println!("{}", "💡 Add 'AutomapHostsOnResolve 1' to /etc/tor/torrc for enhanced DNS handling".blue());
                 }
             },
             Err(e) => {
@@ -1878,7 +1915,166 @@ fn check_tor_transparent_proxy_config() {
         }
     } else {
         info!("Tor configuration file not found at {}", torrc_path);
-        println!("{}", "⚠️  Tor config file not found - check /etc/tor/torrc for proxy settings".yellow());
+        println!("{}", "⚠️  Tor configuration file not found - check that Tor is properly installed".yellow());
+    }
+}
+
+// Helper function to auto-configure Tor DNS settings
+fn auto_configure_tor_dns_settings(torrc_path: &str) -> bool {
+    info!("Attempting to auto-configure Tor DNS settings for leak protection");
+
+    // Check if we have write permissions to the torrc file
+    if !std::path::Path::new(torrc_path).exists() {
+        warn!("Tor configuration file does not exist at {}", torrc_path);
+        return false;
+    }
+
+    match std::fs::read_to_string(torrc_path) {
+        Ok(current_config) => {
+            let config_lines: Vec<&str> = current_config.lines().collect();
+            let mut needs_update = false;
+            let mut updated_config = current_config.clone();
+
+            // Check if DNSPort is already configured
+            let has_dns_port = config_lines.iter().any(|line| {
+                let trimmed = line.trim().to_lowercase();
+                trimmed.starts_with("dnsport") || trimmed.starts_with("DNSPort")
+            });
+
+            if !has_dns_port {
+                info!("Adding DNSPort configuration to Tor config");
+                updated_config.push_str("\n# Route DNS requests through Tor to prevent DNS leaks\nDNSPort 53\n");
+                needs_update = true;
+            }
+
+            // Check if AutomapHostsOnResolve is configured
+            let has_automap = config_lines.iter().any(|line| {
+                let trimmed = line.trim().to_lowercase();
+                trimmed.starts_with("automaphostsonresolve") && !trimmed.starts_with("##")
+            });
+
+            if !has_automap {
+                info!("Adding AutomapHostsOnResolve configuration to Tor config");
+                updated_config.push_str("\n# Map all hostnames to IPs via Tor's resolver to prevent DNS leaks\nAutomapHostsOnResolve 1\n");
+                needs_update = true;
+            }
+
+            // Also check for TransPort
+            let has_trans_port = config_lines.iter().any(|line| {
+                let trimmed = line.trim().to_lowercase();
+                trimmed.starts_with("transport") && !trimmed.starts_with("##")
+            });
+
+            if !has_trans_port {
+                info!("Adding TransPort configuration to Tor config");
+                updated_config.push_str("\n# Transparent proxy port for routing all traffic through Tor\nTransPort 9040\n");
+                needs_update = true;
+            }
+
+            if needs_update {
+                // Write the updated configuration to the file (requires sudo)
+                match write_config_with_sudo(torrc_path, &updated_config) {
+                    Ok(_) => {
+                        info!("Successfully updated Tor configuration with DNS settings");
+                        println!("{}", "🔧 Tor configuration updated with DNSPort, AutomapHostsOnResolve, and TransPort".green());
+
+                        // Restart Tor service to apply changes
+                        if restart_tor_service_helper() {
+                            info!("Tor service restarted with new DNS configuration");
+                            println!("{}", "🔄 Tor service restarted to apply configuration changes".green());
+                        } else {
+                            warn!("Failed to restart Tor service after configuration update");
+                            println!("{}", "⚠️  Failed to restart Tor service - DNS changes may not take effect".yellow());
+                        }
+                        return true;
+                    },
+                    Err(e) => {
+                        warn!("Failed to update Tor configuration file: {}", e);
+                        println!("{}", format!("⚠️  Could not update Tor config - add DNSPort, TransPort manually: {}", e).yellow());
+                    }
+                }
+            } else {
+                info!("Tor configuration already contains required DNS settings");
+                return true;
+            }
+        },
+        Err(e) => {
+            warn!("Cannot read Tor configuration file to update DNS settings: {}", e);
+            return false;
+        }
+    }
+
+    false
+}
+
+// Helper function to write configuration file with sudo
+fn write_config_with_sudo(file_path: &str, content: &str) -> Result<(), String> {
+    // Use a temporary file and then copy with sudo
+    let temp_path = "/tmp/torc_temp_torrc";
+
+    match std::fs::write(temp_path, content) {
+        Ok(_) => {
+            // Copy the temp file to the actual location with sudo
+            let result = Command::new("sudo")
+                .args(&["cp", temp_path, file_path])
+                .output();
+
+            match result {
+                Ok(output) => {
+                    if output.status.success() {
+                        // Clean up the temp file
+                        let _ = std::fs::remove_file(temp_path);
+                        Ok(())
+                    } else {
+                        Err(format!("sudo cp failed: {}", String::from_utf8_lossy(&output.stderr)))
+                    }
+                },
+                Err(e) => Err(format!("failed to execute sudo copy: {}", e))
+            }
+        },
+        Err(e) => Err(format!("failed to write temporary file: {}", e))
+    }
+}
+
+// Helper function to restart Tor service after configuration changes
+fn restart_tor_service_helper() -> bool {
+    info!("Restarting Tor service to apply configuration changes");
+
+    // Stop the Tor service first
+    match stop_tor_service() {
+        Ok(_) => {
+            info!("Tor service stopped successfully");
+
+            // Give some time for the service to fully stop
+            std::thread::sleep(std::time::Duration::from_secs(2));
+
+            // Start the Tor service again with new configuration
+            match start_tor_service_with_delay() {
+                Ok(_) => {
+                    info!("Tor service restarted successfully with new configuration");
+                    true
+                },
+                Err(e) => {
+                    warn!("Failed to restart Tor service: {}", e);
+                    false
+                }
+            }
+        },
+        Err(e) => {
+            warn!("Failed to stop Tor service before restart: {}", e);
+
+            // Try to start directly anyway
+            match start_tor_service_with_delay() {
+                Ok(_) => {
+                    info!("Tor service started with new configuration");
+                    true
+                },
+                Err(start_err) => {
+                    warn!("Failed to start Tor service after stop failure: {}", start_err);
+                    false
+                }
+            }
+        }
     }
 }
 
@@ -1980,8 +2176,11 @@ fn configure_iptables_for_tor() -> bool {
         vec!["-t", "nat", "-N", "TOR_REDIR_V4"],
         // Don't redirect traffic from Tor user (avoid loops)
         vec!["-t", "nat", "-A", "TOR_REDIR_V4", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
-        // Redirect non-local TCP traffic to Tor's transparent proxy port (usually 9040)
-        vec!["-t", "nat", "-A", "TOR_REDIR_V4", "-p", "tcp", "!", "-d", "127.0.0.1", "!", "-d", "192.168.0.0/16", "!", "-d", "10.0.0.0/8", "!", "-d", "172.16.0.0/12", "-j", "REDIRECT", "--to-port", "9040"],
+        // Redirect non-local TCP traffic to Tor's transparent proxy port (9040) - use separate rules for multiple destinations
+        vec!["-t", "nat", "-A", "TOR_REDIR_V4", "-p", "tcp", "!", "-d", "127.0.0.1", "-j", "REDIRECT", "--to-port", "9040"],
+        vec!["-t", "nat", "-A", "TOR_REDIR_V4", "-p", "tcp", "!", "-d", "192.168.0.0/16", "-j", "REDIRECT", "--to-port", "9040"],
+        vec!["-t", "nat", "-A", "TOR_REDIR_V4", "-p", "tcp", "!", "-d", "10.0.0.0/8", "-j", "REDIRECT", "--to-port", "9040"],
+        vec!["-t", "nat", "-A", "TOR_REDIR_V4", "-p", "tcp", "!", "-d", "172.16.0.0/12", "-j", "REDIRECT", "--to-port", "9040"],
         // Use the chain in OUTPUT
         vec!["-t", "nat", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "-j", "TOR_REDIR_V4"]
     ];
@@ -2050,8 +2249,11 @@ fn configure_iptables_for_tor() -> bool {
         vec!["-t", "nat", "-N", "TOR_REDIR_V6"],
         // Don't redirect traffic from Tor user (avoid loops)
         vec!["-t", "nat", "-A", "TOR_REDIR_V6", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
-        // Redirect non-local TCP traffic to Tor's transparent proxy port (9040)
-        vec!["-t", "nat", "-A", "TOR_REDIR_V6", "-p", "tcp", "!", "-d", "::1", "!", "-d", "fe80::/10", "!", "-d", "fc00::/7", "!", "-d", "::ffff:127.0.0.1", "-j", "REDIRECT", "--to-port", "9040"],
+        // Redirect non-local TCP traffic to Tor's transparent proxy port (9040) - separate rules for multiple destinations
+        vec!["-t", "nat", "-A", "TOR_REDIR_V6", "-p", "tcp", "!", "-d", "::1", "-j", "REDIRECT", "--to-port", "9040"],
+        vec!["-t", "nat", "-A", "TOR_REDIR_V6", "-p", "tcp", "!", "-d", "fe80::/10", "-j", "REDIRECT", "--to-port", "9040"],
+        vec!["-t", "nat", "-A", "TOR_REDIR_V6", "-p", "tcp", "!", "-d", "fc00::/7", "-j", "REDIRECT", "--to-port", "9040"],
+        vec!["-t", "nat", "-A", "TOR_REDIR_V6", "-p", "tcp", "!", "-d", "::ffff:127.0.0.1", "-j", "REDIRECT", "--to-port", "9040"],
         // Use the chain in OUTPUT
         vec!["-t", "nat", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "-j", "TOR_REDIR_V6"]
     ];

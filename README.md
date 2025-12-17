@@ -129,8 +129,9 @@ Currently targeting Arch-based and Debian-based Linux distributions with plans t
 - [x] Implement DNS configuration validation for proper Tor DNS setup
 - [x] Fix iptables rule configuration to eliminate invalid argument errors
 - [x] Implement transparent proxy configuration using TransPort/DNSPort for HTTP and other traffic
+- [x] Implement automatic Tor configuration updates for proper transparent proxying
 - [x] Add connection verification that checks if traffic is actually routed through Tor
-- [ ] Implement circuit monitoring to show active Tor circuits
+- [x] Implement circuit monitoring to show active Tor circuits
 - [ ] Add proxy authentication support if needed
 
 ### Security & Privacy
