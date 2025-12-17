@@ -74,15 +74,6 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Manage system Tor operations (connect, disconnect, status)
-    System {
-        #[command(subcommand)]
-        operation: Option<SystemOps>,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-enum SystemOps {
     /// Connect to the Tor network
     Connect,
     /// Disconnect from the Tor network
@@ -90,6 +81,7 @@ enum SystemOps {
     /// Check the Tor network status
     Status,
 }
+
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -104,18 +96,9 @@ async fn main() -> Result<()> {
     info!("Parsed command line arguments: {:?}", cli.command);
 
     match &cli.command {
-        Some(Commands::System { operation }) => {
-            info!("Executing System command with operation: {:?}", operation);
-            match operation {
-                Some(SystemOps::Connect) => connect_to_tor().await?,
-                Some(SystemOps::Disconnect) => disconnect_from_tor().await?,
-                Some(SystemOps::Status) => check_tor_status().await?,
-                None => {
-                    info!("Showing interactive menu for System command");
-                    show_interactive_menu().await? // Show menu if no sub-operation specified
-                },
-            }
-        },
+        Some(Commands::Connect) => connect_to_tor().await?,
+        Some(Commands::Disconnect) => disconnect_from_tor().await?,
+        Some(Commands::Status) => check_tor_status().await?,
         None => {
             info!("Showing interactive menu as no command specified");
             show_interactive_menu().await? // Show menu if no command specified
