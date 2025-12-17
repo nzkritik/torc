@@ -439,19 +439,27 @@ async fn disconnect_from_tor() -> Result<()> {
             // Synchronization: Wait for network configuration to fully settle after restoration
             info!("Waiting for network configuration to stabilize");
             println!("{}", "🔄 Waiting for network configuration to settle...".yellow());
-            std::thread::sleep(std::time::Duration::from_secs(2));
+            std::thread::sleep(std::time::Duration::from_secs(1));
 
-            // Clear DNS cache to ensure we're using the restored DNS configuration
+            // First, clear the DNS cache to ensure we're using the restored configuration
             if clear_dns_cache() {
-                debug!("DNS cache cleared successfully after disconnection");
+                info!("DNS cache cleared successfully after disconnection");
             } else {
                 warn!("Failed to clear DNS cache after disconnection");
             }
 
+            // Short pause after cache clearing to allow changes to propagate
+            std::thread::sleep(std::time::Duration::from_millis(500));
+
             // Refresh DNS resolver to ensure it picks up the restored configuration
             refresh_dns_resolver();
 
-            // Additional wait for the DNS resolver to fully refresh
+            // Longer wait for the DNS resolver and network configuration to fully settle
+            println!("{}", "🔄 Finishing network restoration...".yellow());
+            std::thread::sleep(std::time::Duration::from_secs(3));
+
+            // Perform a final network state verification
+            println!("{}", "🔄 Final network verification...".yellow());
             std::thread::sleep(std::time::Duration::from_secs(1));
 
             println!("{}", "✅ Successfully disconnected from Tor Network".green());
@@ -1603,10 +1611,10 @@ fn clear_dns_cache() -> bool {
 
     let mut any_success = false;
 
-    // Try different DNS cache clearing methods based on system
-    // systemd-resolved
+    // Try different DNS cache clearing methods based on system using non-interactive sudo
+    // systemd-resolved (with non-interactive flag)
     let resolved_result = Command::new("sudo")
-        .args(&["resolvectl", "flush-caches"])
+        .args(&["-n", "resolvectl", "flush-caches"])
         .output();
 
     match resolved_result {
@@ -1615,7 +1623,7 @@ fn clear_dns_cache() -> bool {
                 debug!("systemd-resolved DNS cache cleared");
                 any_success = true;
             } else {
-                debug!("systemd-resolved cache flush failed or not available: {}", String::from_utf8_lossy(&output.stderr));
+                debug!("systemd-resolved cache flush failed or requires password: {}", String::from_utf8_lossy(&output.stderr));
             }
         }
         Err(_) => {
@@ -1625,7 +1633,7 @@ fn clear_dns_cache() -> bool {
 
     // Also try traditional systemd-resolved location if the above fails
     let resolved_result2 = Command::new("sudo")
-        .args(&["systemd-resolve", "--flush-caches"])
+        .args(&["-n", "systemd-resolve", "--flush-caches"])
         .output();
 
     match resolved_result2 {
@@ -1634,7 +1642,7 @@ fn clear_dns_cache() -> bool {
                 debug!("systemd-resolve DNS cache cleared");
                 any_success = true;
             } else {
-                debug!("systemd-resolve cache flush failed or not available: {}", String::from_utf8_lossy(&output.stderr));
+                debug!("systemd-resolve cache flush failed or requires password: {}", String::from_utf8_lossy(&output.stderr));
             }
         }
         Err(_) => {
@@ -1642,9 +1650,9 @@ fn clear_dns_cache() -> bool {
         }
     }
 
-    // Try dnsmasq if running
+    // Try dnsmasq if running (with non-interactive flag)
     let dnsmasq_result = Command::new("sudo")
-        .args(&["pkill", "-USR2", "dnsmasq"])
+        .args(&["-n", "pkill", "-USR2", "dnsmasq"])
         .output();
 
     match dnsmasq_result {
@@ -1661,9 +1669,9 @@ fn clear_dns_cache() -> bool {
         }
     }
 
-    // Try nscd if running
+    // Try nscd if running (with non-interactive flag)
     let nscd_result = Command::new("sudo")
-        .args(&["nscd", "-i", "hosts"])
+        .args(&["-n", "nscd", "-i", "hosts"])
         .output();
 
     match nscd_result {
@@ -1672,7 +1680,7 @@ fn clear_dns_cache() -> bool {
                 debug!("nscd hosts cache cleared");
                 any_success = true;
             } else {
-                debug!("nscd cache flush failed or not running: {}", String::from_utf8_lossy(&output.stderr));
+                debug!("nscd cache flush failed or requires password: {}", String::from_utf8_lossy(&output.stderr));
             }
         }
         Err(_) => {
@@ -1956,9 +1964,12 @@ fn restore_dns_config_to_original() -> Result<(), Box<dyn std::error::Error>> {
 
 // Helper function to refresh DNS resolver
 fn refresh_dns_resolver() {
-    // Try to restart DNS services if possible
+    // Refresh DNS resolver to apply new configuration using non-interactive commands
+    // Prioritize non-systemd-resolved methods to avoid GUI prompts
+
+    // Try direct service restart with non-interactive sudo
     let result = Command::new("sudo")
-        .args(&["systemctl", "reload-or-restart", "systemd-resolved"])
+        .args(&["-n", "systemctl", "reload", "systemd-resolved"])
         .output();
 
     match result {
@@ -1966,11 +1977,67 @@ fn refresh_dns_resolver() {
             if output.status.success() {
                 info!("systemd-resolved reloaded successfully");
             } else {
-                debug!("systemd-resolved reload failed: {}", String::from_utf8_lossy(&output.stderr));
+                debug!("systemd-resolved reload failed or requires password: {}", String::from_utf8_lossy(&output.stderr));
+
+                // Alternative: Try to send SIGHUP to systemd-resolved directly
+                let alt_result = Command::new("sudo")
+                    .args(&["-n", "pkill", "-HUP", "systemd-resolved"])
+                    .output();
+
+                match alt_result {
+                    Ok(alt_output) => {
+                        if alt_output.status.success() {
+                            info!("systemd-resolved HUP signal sent successfully");
+                        } else {
+                            debug!("systemd-resolved HUP signal failed or service not running: {}", String::from_utf8_lossy(&alt_output.stderr));
+                        }
+                    },
+                    Err(alt_e) => {
+                        debug!("Failed to send HUP signal to systemd-resolved: {}", alt_e);
+                    }
+                }
             }
         },
         Err(e) => {
             debug!("Failed to reload systemd-resolved: {}", e);
+            // Try direct service control as alternative
+            let direct_result = Command::new("sudo")
+                .args(&["-n", "pkill", "-USR2", "systemd-resolved"])
+                .output();
+
+            match direct_result {
+                Ok(direct_output) => {
+                    if direct_output.status.success() {
+                        info!("systemd-resolved USR2 signal sent successfully");
+                    } else {
+                        debug!("systemd-resolved USR2 signal failed or not running: {}", String::from_utf8_lossy(&direct_output.stderr));
+                    }
+                },
+                Err(direct_e) => {
+                    debug!("Failed to send USR2 signal to systemd-resolved: {}", direct_e);
+                }
+            }
+        }
+    }
+
+    // Alternative DNS cache refresh methods that don't rely on systemctl
+    // If systemd-resolved is not used, try other methods
+
+    // Try to restart NetworkManager using a different approach
+    let nm_result = Command::new("sudo")
+        .args(&["-n", "nmcli", "connection", "reload"])
+        .output();
+
+    match nm_result {
+        Ok(output) => {
+            if output.status.success() {
+                info!("NetworkManager connection reload triggered");
+            } else {
+                debug!("NetworkManager reload failed or not available: {}", String::from_utf8_lossy(&output.stderr));
+            }
+        },
+        Err(e) => {
+            debug!("NetworkManager CLI (nmcli) not available: {}", e);
         }
     }
 }
@@ -2284,6 +2351,7 @@ fn configure_iptables_for_tor() -> bool {
 
     for rule in &cleanup_ipv4_rules {
         let _ = Command::new("sudo")
+            .arg("-n")  // Non-interactive mode to avoid GUI prompts
             .arg("iptables")
             .args(rule)
             .output(); // Ignore errors - the chain may not exist
@@ -2305,6 +2373,7 @@ fn configure_iptables_for_tor() -> bool {
     // Apply IPv4 iptables rules
     for rule in &ipv4_rules {
         match Command::new("sudo")
+            .arg("-n")  // Non-interactive mode to avoid GUI prompts
             .arg("iptables")
             .args(rule)
             .output() {
@@ -2355,6 +2424,7 @@ fn configure_iptables_for_tor() -> bool {
 
     for rule in &ipv4_nat_rules {
         match Command::new("sudo")
+            .arg("-n")  // Non-interactive mode to avoid GUI prompts
             .arg("iptables")
             .args(rule)
             .output() {
@@ -2382,6 +2452,7 @@ fn configure_iptables_for_tor() -> bool {
 
     for rule in &cleanup_ipv6_rules {
         let _ = Command::new("sudo")
+            .arg("-n")  // Non-interactive mode to avoid GUI prompts
             .arg("ip6tables")
             .args(rule)
             .output(); // Ignore errors - the chain may not exist
@@ -2454,6 +2525,7 @@ fn configure_iptables_for_tor() -> bool {
 
     for rule in &ipv6_nat_rules {
         match Command::new("sudo")
+            .arg("-n")  // Non-interactive mode to avoid GUI prompts
             .arg("ip6tables")
             .args(rule)
             .output() {
@@ -2537,6 +2609,7 @@ fn restore_iptables_rules() -> bool {
 
     for rule in &ipv4_cleanup_rules {
         match Command::new("sudo")
+            .arg("-n")  // Non-interactive mode to avoid GUI prompts
             .arg("iptables")
             .args(rule)
             .output() {
@@ -2569,6 +2642,7 @@ fn restore_iptables_rules() -> bool {
 
     for rule in &ipv6_cleanup_rules {
         match Command::new("sudo")
+            .arg("-n")  // Non-interactive mode to avoid GUI prompts
             .arg("ip6tables")
             .args(rule)
             .output() {
@@ -2595,6 +2669,7 @@ fn restore_iptables_rules() -> bool {
 
     for rule in &ipv4_flush_rules {
         match Command::new("sudo")
+            .arg("-n")  // Non-interactive mode to avoid GUI prompts
             .arg("iptables")
             .args(rule)
             .output() {
@@ -2621,6 +2696,7 @@ fn restore_iptables_rules() -> bool {
 
     for rule in &ipv6_flush_rules {
         match Command::new("sudo")
+            .arg("-n")  // Non-interactive mode to avoid GUI prompts
             .arg("ip6tables")
             .args(rule)
             .output() {
