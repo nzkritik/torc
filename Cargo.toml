@@ -1,6 +1,6 @@
 [package]
 name = "torc"
-version = "0.1.0"
+version = "0.1.1-dev"
 edition = "2021"
 authors = ["sg1.kritik@gmail.com>"]
 description = "A Rust CLI application to connect your system to the Tor network"

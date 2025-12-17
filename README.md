@@ -133,6 +133,7 @@ Currently targeting Arch-based and Debian-based Linux distributions with plans t
 - [x] Add connection verification that checks if traffic is actually routed through Tor
 - [x] Implement circuit monitoring to show active Tor circuits
 - [x] Remove disk encryption functionality (not core to Tor networking)
+- [x] Implement proper disconnection synchronization to prevent DNS resolution issues
 - [ ] Add proxy authentication support if needed
 
 ### Security & Privacy

@@ -436,9 +436,28 @@ async fn disconnect_from_tor() -> Result<()> {
                 }
             }
 
-            println!("{}", "Disconnected from Tor Network. Your traffic is no longer anonymized.".red());
-            println!("{}", "Regular internet connection restored.".green());
-            info!("Successfully disconnected from Tor Network");
+            // Synchronization: Wait for network configuration to fully settle after restoration
+            info!("Waiting for network configuration to stabilize");
+            println!("{}", "🔄 Waiting for network configuration to settle...".yellow());
+            std::thread::sleep(std::time::Duration::from_secs(2));
+
+            // Clear DNS cache to ensure we're using the restored DNS configuration
+            if clear_dns_cache() {
+                debug!("DNS cache cleared successfully after disconnection");
+            } else {
+                warn!("Failed to clear DNS cache after disconnection");
+            }
+
+            // Refresh DNS resolver to ensure it picks up the restored configuration
+            refresh_dns_resolver();
+
+            // Additional wait for the DNS resolver to fully refresh
+            std::thread::sleep(std::time::Duration::from_secs(1));
+
+            println!("{}", "✅ Successfully disconnected from Tor Network".green());
+            println!("{}", "🔒 Your traffic is no longer anonymized.".red());
+            println!("{}", "🌐 Regular internet connection restored.".green());
+            info!("Successfully disconnected from Tor Network - network configuration has settled");
         },
         Err(e) => {
             error!("Failed to disconnect from Tor Network: {}", e);
@@ -1524,6 +1543,7 @@ fn wait_for_port_to_become_available(host: &str, port: u16, max_retries: u32) ->
     warn!("Port {}:{} did not become available after {} attempts", host, port, max_retries);
     false
 }
+
 
 // Function to restore DNS configuration to normal state
 // Returns true if successful, false if there was an error
