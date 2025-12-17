@@ -1739,16 +1739,26 @@ fn backup_resolv_conf() {
     let backup_path = "/etc/resolv.conf.torc.backup";
 
     if Path::new(resolv_conf).exists() && !Path::new(backup_path).exists() {
-        match fs::copy(resolv_conf, backup_path) {
-            Ok(_) => {
-                info!("Backed up /etc/resolv.conf to {}", backup_path);
+        // Use sudo to copy the file since /etc/resolv.conf requires root privileges
+        match Command::new("sudo")
+            .args(&["cp", resolv_conf, backup_path])
+            .output() {
+            Ok(output) => {
+                if output.status.success() {
+                    info!("Successfully backed up /etc/resolv.conf to {}", backup_path);
+                    debug!("Backup command output: {}", String::from_utf8_lossy(&output.stdout));
+                } else {
+                    warn!("Failed to backup /etc/resolv.conf: {}", String::from_utf8_lossy(&output.stderr));
+                }
             },
             Err(e) => {
-                warn!("Failed to backup /etc/resolv.conf: {}", e);
+                warn!("Failed to execute backup command for /etc/resolv.conf: {}", e);
             }
         }
     } else if Path::new(backup_path).exists() {
         info!("Existing backup found at {}", backup_path);
+    } else if !Path::new(resolv_conf).exists() {
+        info!("resolv.conf file does not exist at {}", resolv_conf);
     }
 }
 
@@ -1795,18 +1805,48 @@ fn create_tor_resolv_conf() -> Result<(), Box<dyn std::error::Error>> {
 // Helper function to restore DNS configuration
 fn restore_dns_config_to_original() -> Result<(), Box<dyn std::error::Error>> {
     let backup_path = "/etc/resolv.conf.torc.backup";
+    let resolv_conf = "/etc/resolv.conf";
 
     if Path::new(backup_path).exists() {
-        // In a complete implementation, this would be:
-        // fs::copy(backup_path, "/etc/resolv.conf")?;
-        // fs::remove_file(backup_path)?;
+        // Use sudo to restore the backup since /etc/resolv.conf requires root privileges
+        let restore_result = Command::new("sudo")
+            .args(&["cp", backup_path, resolv_conf])
+            .output();
 
-        info!("Would restore DNS configuration from backup: {}", backup_path);
+        match restore_result {
+            Ok(output) => {
+                if output.status.success() {
+                    info!("Successfully restored DNS configuration from backup: {}", backup_path);
+                    debug!("Restore command output: {}", String::from_utf8_lossy(&output.stdout));
 
-        // Refresh DNS resolvers
+                    // Also remove the backup file after successful restore
+                    let remove_result = Command::new("sudo")
+                        .arg("rm")
+                        .arg(backup_path)
+                        .output();
+
+                    if let Ok(remove_output) = remove_result {
+                        if !remove_output.status.success() {
+                            warn!("Could not remove DNS backup file: {}", String::from_utf8_lossy(&remove_output.stderr));
+                        } else {
+                            info!("Successfully removed DNS backup file after restoration");
+                        }
+                    }
+                } else {
+                    warn!("Failed to restore DNS configuration: {}", String::from_utf8_lossy(&output.stderr));
+                    return Err(format!("Failed to restore DNS configuration: {}", String::from_utf8_lossy(&output.stderr)).into());
+                }
+            },
+            Err(e) => {
+                warn!("Failed to execute restore command: {}", e);
+                return Err(format!("Failed to execute DNS restore command: {}", e).into());
+            }
+        }
+
+        // Refresh DNS resolvers after restoration
         refresh_dns_resolver();
     } else {
-        info!("No DNS backup found, leaving as-is");
+        info!("No DNS backup found at {}, leaving as-is", backup_path);
     }
 
     Ok(())
