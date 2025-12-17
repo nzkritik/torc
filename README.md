@@ -149,6 +149,8 @@ Currently targeting Arch-based and Debian-based Linux distributions with plans t
 - [x] Implement proper logging system
 - [x] Fix iptables "chain already exists" errors during multiple connection attempts
 - [x] Fix DNS configuration backup/restore permission issues
+- [x] Implement DNS port availability checking with retry logic
+- [x] Add Tor DNS configuration detection for proper port identification
 
 ### Backup & Restore System
 - [x] Implement actual network configuration restoration (currently uses placeholder functions)

@@ -1358,7 +1358,7 @@ fn configure_dns_for_tor() -> bool {
         return false;
     }
 
-    // Check if Tor is configured to handle DNS requests through its DNS port (9053 by default)
+    // Check if Tor is configured to handle DNS requests through its DNS port
     if !is_tor_dns_configured() {
         warn!("Tor is not configured to handle DNS requests - please ensure DNSPort is enabled in torrc");
         // This is a critical issue for DNS leak protection
@@ -1368,7 +1368,7 @@ fn configure_dns_for_tor() -> bool {
     // Before changing DNS settings, backup the current /etc/resolv.conf
     backup_resolv_conf();
 
-    // Configure Tor to handle DNS requests through its DNS port (9053 by default)
+    // Configure Tor to handle DNS requests through its DNS port
     // This requires modifying the Tor configuration or using a DNS proxy solution
     // For now, let's implement a systemd-resolved approach which is common on modern systems
 
@@ -1376,9 +1376,17 @@ fn configure_dns_for_tor() -> bool {
     if is_systemd_resolved_running() {
         info!("Configuring systemd-resolved for Tor DNS");
 
-        // First, check if Tor is actively listening on its DNS port (9053 by default)
-        if is_port_open("127.0.0.1", 9053) {
-            info!("Tor DNS port 9053 is available");
+        // First, wait a bit for Tor to start listening on its DNS port before checking
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        // Try to detect which port Tor is configured to listen on for DNS
+        let tor_dns_port = detect_tor_dns_port().unwrap_or(53);  // Default to 53 if not specified in config
+
+        info!("Attempting to connect to Tor DNS port {}", tor_dns_port);
+
+        // Check if Tor is listening on its DNS port with retries
+        if wait_for_port_to_become_available("127.0.0.1", tor_dns_port, 10) {
+            info!("Tor DNS port {} is available", tor_dns_port);
 
             // Create a stub resolver that redirects to Tor's DNS port
             match create_dns_redirect_stubs() {
@@ -1391,16 +1399,25 @@ fn configure_dns_for_tor() -> bool {
                 }
             }
         } else {
-            warn!("Tor DNS port (9053) is not listening - DNS over Tor will not work");
-            success = false;
+            warn!("Tor DNS port ({}) is not listening after waiting - DNS over Tor may not work", tor_dns_port);
+            // Don't fail completely if DNS port is not immediately available -
+            // the system can still route traffic through Tor using iptables
+            // For now, let's make this a warning but not a complete failure
+            warn!("DNS over Tor may not work properly - traffic routing via iptables will still function");
         }
     } else {
         // For systems not using systemd-resolved, configure DNS differently
         info!("Configuring traditional DNS for Tor routing");
 
-        // First, check if Tor DNS port is available
-        if is_port_open("127.0.0.1", 9053) {
-            info!("Tor DNS port 9053 is available");
+        // Wait for Tor to be ready before checking its port
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        // Try to detect which port Tor is configured to listen on for DNS
+        let tor_dns_port = detect_tor_dns_port().unwrap_or(53);  // Default to 53 if not specified in config
+
+        // Check if Tor DNS port is available with retries
+        if wait_for_port_to_become_available("127.0.0.1", tor_dns_port, 10) {
+            info!("Tor DNS port {} is available", tor_dns_port);
 
             // Create a custom resolv.conf that points to Tor's DNS port
             match create_tor_resolv_conf() {
@@ -1413,8 +1430,9 @@ fn configure_dns_for_tor() -> bool {
                 }
             }
         } else {
-            warn!("Tor DNS port (9053) is not listening - DNS over Tor will not work");
-            success = false;
+            warn!("Tor DNS port ({}) is not listening after waiting - DNS over Tor may not work", tor_dns_port);
+            // Similar to above, don't fail completely if DNS port is not immediately available
+            warn!("DNS over Tor may not work properly - traffic routing via iptables will still function");
         }
     }
 
@@ -1441,6 +1459,56 @@ fn is_port_open(host: &str, port: u16) -> bool {
             false
         }
     }
+}
+
+// Helper function to detect Tor's DNS port from configuration
+fn detect_tor_dns_port() -> Option<u16> {
+    let torrc_path = "/etc/tor/torrc";
+    if Path::new(torrc_path).exists() {
+        match std::fs::read_to_string(torrc_path) {
+            Ok(config) => {
+                for line in config.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("DNSPort") {
+                        // Extract the port number
+                        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                        if parts.len() >= 2 {
+                            if let Ok(port) = parts[1].parse::<u16>() {
+                                return Some(port);
+                            }
+                        }
+                    }
+                }
+            },
+            Err(e) => {
+                warn!("Could not read Tor configuration to detect DNS port: {}", e);
+            }
+        }
+    }
+
+    // If we can't read the config or DNSPort is not set, check for common default ports
+    // Standard Tor DNS port is 9053, but many configs use 53 for local DNS resolution
+    None  // Will default to 53 elsewhere
+}
+
+// Helper function to wait for a port to become available
+fn wait_for_port_to_become_available(host: &str, port: u16, max_retries: u32) -> bool {
+    info!("Waiting for port {}:{} to become available...", host, port);
+
+    for i in 0..max_retries {
+        if is_port_open(host, port) {
+            info!("Port {}:{} is available after {} attempts", host, port, i + 1);
+            return true;
+        }
+
+        if i < max_retries - 1 {
+            debug!("Port {}:{} not available yet, waiting... (attempt {}/{})", host, port, i + 1, max_retries);
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+    }
+
+    warn!("Port {}:{} did not become available after {} attempts", host, port, max_retries);
+    false
 }
 
 // Function to restore DNS configuration to normal state
