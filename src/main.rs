@@ -515,8 +515,6 @@ async fn check_tor_status() -> Result<()> {
     Ok(())
 }
 
-
-
 fn display_tor_info() {
     println!("{}", "\nTor Configuration:".cyan());
     println!("{}", "  SOCKS Proxy: 127.0.0.1:9050".white());
@@ -539,7 +537,6 @@ fn validate_sudo_access() -> Result<()> {
 
     Ok(())
 }
-
 
 // Enhanced version of start_tor_service with animated delay indicator
 fn start_tor_service_with_delay() -> Result<()> {
@@ -2489,7 +2486,6 @@ fn configure_iptables_for_tor() -> bool {
     info!("Iptables configuration for Tor completed with success: {}", success);
     success
 }
-
 
 fn restore_system_proxy() {
     println!("{}", "Restoring normal system routing...".yellow());
