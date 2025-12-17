@@ -436,36 +436,45 @@ async fn disconnect_from_tor() -> Result<()> {
                 }
             }
 
-            // Synchronization: Wait for network configuration to fully settle after restoration
-            info!("Waiting for network configuration to stabilize");
-            println!("{}", "🔄 Waiting for network configuration to settle...".yellow());
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            // Step 1: Wait briefly to allow file system operations to complete
+            println!("{}", "⏳ Cleaning up system state...".yellow());
+            std::thread::sleep(std::time::Duration::from_secs(2));
 
-            // First, clear the DNS cache to ensure we're using the restored configuration
+            // Step 2: Wait for network configuration to begin settling after restoration
+            info!("Waiting for network configuration to begin stabilization");
+            println!("{}", "🔄 Initiating network configuration restoration...".yellow());
+            std::thread::sleep(std::time::Duration::from_secs(2));
+
+            // Step 3: Clear the DNS cache to ensure we're using the restored configuration
             if clear_dns_cache() {
                 info!("DNS cache cleared successfully after disconnection");
             } else {
                 warn!("Failed to clear DNS cache after disconnection");
             }
 
-            // Short pause after cache clearing to allow changes to propagate
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            // Step 4: Wait after DNS cache clearing to allow changes to propagate
+            println!("{}", "🔄 Clearing DNS cache...".yellow());
+            std::thread::sleep(std::time::Duration::from_secs(2));
 
-            // Refresh DNS resolver to ensure it picks up the restored configuration
+            // Step 5: Refresh DNS resolver to ensure it picks up the restored configuration
             refresh_dns_resolver();
 
-            // Longer wait for the DNS resolver and network configuration to fully settle
-            println!("{}", "🔄 Finishing network restoration...".yellow());
+            // Step 6: Wait for DNS resolver changes to take effect
+            println!("{}", "🔄 Refreshing DNS resolver...".yellow());
+            std::thread::sleep(std::time::Duration::from_secs(2));
+
+            // Step 7: Longer wait for the network configuration to fully settle
+            println!("{}", "🔄 Finalizing network restoration...".yellow());
             std::thread::sleep(std::time::Duration::from_secs(3));
 
-            // Perform a final network state verification
+            // Step 8: Perform a final network state verification
             println!("{}", "🔄 Final network verification...".yellow());
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            std::thread::sleep(std::time::Duration::from_secs(2));
 
             println!("{}", "✅ Successfully disconnected from Tor Network".green());
             println!("{}", "🔒 Your traffic is no longer anonymized.".red());
             println!("{}", "🌐 Regular internet connection restored.".green());
-            info!("Successfully disconnected from Tor Network - network configuration has settled");
+            info!("Successfully disconnected from Tor Network - network configuration has fully settled");
         },
         Err(e) => {
             error!("Failed to disconnect from Tor Network: {}", e);
@@ -756,6 +765,7 @@ async fn get_external_ip() -> Result<Option<String>> {
         // as the returned IP will be from a Tor exit node, not the real IP
         debug!("Connected to Tor - IP retrieval will return exit node IP, not real IP");
         warn!("Tor is connected - external IP retrieval may return exit node IP address instead of real IP");
+        println!();
         println!("{}", "⚠️  Tor is connected - IP address shown will be from Tor exit node".yellow());
     } else {
         info!("Tor is not running - IP retrieval should return real public IP");
@@ -2595,6 +2605,9 @@ fn restore_iptables_rules() -> bool {
 
     let mut success = true;
 
+    // First wait a moment before starting restoration
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
     // Remove the IPv4 chains we created
     let ipv4_cleanup_rules = vec![
         // Delete references to our custom IPv4 chains in OUTPUT
@@ -2626,7 +2639,13 @@ fn restore_iptables_rules() -> bool {
                 success = false;
             }
         }
+
+        // Wait between rules to prevent race conditions
+        std::thread::sleep(std::time::Duration::from_millis(250));
     }
+
+    // Wait after clearing IPv4 rules before proceeding
+    std::thread::sleep(std::time::Duration::from_secs(1));
 
     // Remove the IPv6 chains we created
     let ipv6_cleanup_rules = vec![
@@ -2659,7 +2678,13 @@ fn restore_iptables_rules() -> bool {
                 success = false;
             }
         }
+
+        // Wait between rules to prevent race conditions
+        std::thread::sleep(std::time::Duration::from_millis(250));
     }
+
+    // Wait after clearing IPv6 rules before proceeding
+    std::thread::sleep(std::time::Duration::from_secs(1));
 
     // Also flush all rules in mangle and nat tables to ensure clean state for IPv4
     let ipv4_flush_rules = vec![
@@ -2686,7 +2711,13 @@ fn restore_iptables_rules() -> bool {
                 success = false;
             }
         }
+
+        // Wait between flush commands to prevent race conditions
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
+
+    // Wait after flushing IPv4 tables before proceeding to IPv6
+    std::thread::sleep(std::time::Duration::from_secs(1));
 
     // Also flush all rules in mangle and nat tables to ensure clean state for IPv6
     let ipv6_flush_rules = vec![
@@ -2713,7 +2744,13 @@ fn restore_iptables_rules() -> bool {
                 // IPv6 failure is non-critical since IPv4 is the main concern
             }
         }
+
+        // Wait between IPv6 flush commands to prevent race conditions
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
+
+    // Final wait after all iptables operations are complete
+    std::thread::sleep(std::time::Duration::from_secs(2));
 
     info!("Iptables restoration completed with success: {}", success);
     success
@@ -2731,17 +2768,32 @@ fn restore_system_state() -> Result<()> {
         // Restore proxy settings
         restore_proxy_settings(&state.proxy_settings)?;
 
+        // Wait after proxy settings restoration
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
         // Restore firewall rules
         restore_firewall_rules(&state.firewall_rules)?;
+
+        // Wait after firewall rules restoration
+        std::thread::sleep(std::time::Duration::from_secs(1));
 
         // Restore DNS servers
         restore_dns_servers(&state.dns_servers)?;
 
+        // Wait after DNS servers restoration
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
         // Restore routing table
         restore_routing_table(&state.routing_table)?;
 
+        // Wait after routing table restoration
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
         // Restore network interfaces
         restore_network_interfaces(&state.network_interfaces)?;
+
+        // Final wait before clearing the backup
+        std::thread::sleep(std::time::Duration::from_secs(1));
 
         println!("{}", "✓ System network state restored successfully".green());
 
@@ -2750,6 +2802,9 @@ fn restore_system_state() -> Result<()> {
             let mut backup = SYSTEM_STATE_BACKUP.lock().unwrap();
             *backup = None;
         }
+
+        // Additional wait after clearing backup
+        std::thread::sleep(std::time::Duration::from_secs(1));
 
         Ok(())
     } else {

@@ -135,6 +135,7 @@ Currently targeting Arch-based and Debian-based Linux distributions with plans t
 - [x] Remove disk encryption functionality (not core to Tor networking)
 - [x] Implement proper disconnection synchronization to prevent DNS resolution issues
 - [x] Configure iptables rules to redirect all traffic through Tor transparently
+- [x] Implement comprehensive iptables rule restoration with proper delays and synchronization
 - [ ] Add proxy authentication support if needed
 
 ### Security & Privacy
