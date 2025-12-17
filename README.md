@@ -147,6 +147,7 @@ Currently targeting Arch-based and Debian-based Linux distributions with plans t
 - [ ] Implement automatic restart on system boot (when configured)
 - [ ] Add support for multiple Tor configurations/profiles
 - [x] Implement proper logging system
+- [x] Fix iptables "chain already exists" errors during multiple connection attempts
 
 ### Backup & Restore System
 - [x] Implement actual network configuration restoration (currently uses placeholder functions)

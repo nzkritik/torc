@@ -2134,11 +2134,24 @@ fn configure_iptables_for_tor() -> bool {
     let tor_uid = tor_user.unwrap_or_else(|| "debian-tor".to_string());
 
     // Configure iptables rules for IPv4 traffic redirection
+    // First, remove existing chains if they exist to avoid "Chain already exists" errors
+    let cleanup_ipv4_rules = vec![
+        // Delete existing chain if it exists
+        vec!["-t", "mangle", "-X", "TOR_REDIRECT_V4"],
+    ];
+
+    for rule in &cleanup_ipv4_rules {
+        let _ = Command::new("sudo")
+            .arg("iptables")
+            .args(rule)
+            .output(); // Ignore errors - the chain may not exist
+    }
+
     let ipv4_rules = vec![
-        // Flush existing OUTPUT chain rules in mangle table for IPv4
-        vec!["-t", "mangle", "-F", "OUTPUT"],
         // Create new chain for Tor traffic (IPv4)
         vec!["-t", "mangle", "-N", "TOR_REDIRECT_V4"],
+        // Flush existing OUTPUT chain rules in mangle table for IPv4
+        vec!["-t", "mangle", "-F", "OUTPUT"],
         // Redirect all TCP traffic (except loopback and already redirected) to Tor
         vec!["-t", "mangle", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "127.0.0.1", "-j", "TOR_REDIRECT_V4"],
         // Mark traffic from Tor user to not be redirected (avoid loops)
@@ -2169,11 +2182,24 @@ fn configure_iptables_for_tor() -> bool {
     }
 
     // Also configure OUTPUT chain for the main table to redirect IPv4 traffic to Tor's TransPort for transparent proxying
+    // First, clean up any existing chains to prevent "Chain already exists" errors
+    let cleanup_ipv4_nat_rules = vec![
+        // Delete existing chain if it exists
+        vec!["-t", "nat", "-X", "TOR_REDIR_V4"],
+    ];
+
+    for rule in &cleanup_ipv4_nat_rules {
+        let _ = Command::new("sudo")
+            .arg("iptables")
+            .args(rule)
+            .output(); // Ignore errors - the chain may not exist
+    }
+
     let ipv4_nat_rules = vec![
-        // Flush existing OUTPUT chain rules in nat table for IPv4
-        vec!["-t", "nat", "-F", "OUTPUT"],
         // Create new chain for Tor traffic (IPv4)
         vec!["-t", "nat", "-N", "TOR_REDIR_V4"],
+        // Flush existing OUTPUT chain rules in nat table for IPv4
+        vec!["-t", "nat", "-F", "OUTPUT"],
         // Don't redirect traffic from Tor user (avoid loops)
         vec!["-t", "nat", "-A", "TOR_REDIR_V4", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
         // Redirect non-local TCP traffic to Tor's transparent proxy port (9040) - use separate rules for multiple destinations
@@ -2206,11 +2232,24 @@ fn configure_iptables_for_tor() -> bool {
     }
 
     // Configure ip6tables rules for IPv6 traffic redirection
+    // First, remove existing chains if they exist to avoid "Chain already exists" errors
+    let cleanup_ipv6_rules = vec![
+        // Delete existing chain if it exists
+        vec!["-t", "mangle", "-X", "TOR_REDIRECT_V6"],
+    ];
+
+    for rule in &cleanup_ipv6_rules {
+        let _ = Command::new("sudo")
+            .arg("ip6tables")
+            .args(rule)
+            .output(); // Ignore errors - the chain may not exist
+    }
+
     let ipv6_rules = vec![
-        // Flush existing OUTPUT chain rules in mangle table for IPv6
-        vec!["-t", "mangle", "-F", "OUTPUT"],
         // Create new chain for Tor traffic (IPv6)
         vec!["-t", "mangle", "-N", "TOR_REDIRECT_V6"],
+        // Flush existing OUTPUT chain rules in mangle table for IPv6
+        vec!["-t", "mangle", "-F", "OUTPUT"],
         // Redirect all TCP traffic (except loopback and already redirected) to Tor
         vec!["-t", "mangle", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "::1", "-j", "TOR_REDIRECT_V6"],
         // Mark traffic from Tor user to not be redirected (avoid loops)
@@ -2241,12 +2280,25 @@ fn configure_iptables_for_tor() -> bool {
     }
 
     // Configure ip6tables rules for IPv6 traffic redirection using TransPort for transparent proxying
+    // First, clean up any existing chains to prevent "Chain already exists" errors
+    let cleanup_ipv6_nat_rules = vec![
+        // Delete existing chain if it exists
+        vec!["-t", "nat", "-X", "TOR_REDIR_V6"],
+    ];
+
+    for rule in &cleanup_ipv6_nat_rules {
+        let _ = Command::new("sudo")
+            .arg("ip6tables")
+            .args(rule)
+            .output(); // Ignore errors - the chain may not exist
+    }
+
     let ipv6_nat_rules = vec![
         // For IPv6, redirect non-local traffic to Tor's transparent proxy port
-        // Flush existing OUTPUT chain rules in nat table for IPv6
-        vec!["-t", "nat", "-F", "OUTPUT"],
         // Create new chain for Tor traffic (IPv6)
         vec!["-t", "nat", "-N", "TOR_REDIR_V6"],
+        // Flush existing OUTPUT chain rules in nat table for IPv6
+        vec!["-t", "nat", "-F", "OUTPUT"],
         // Don't redirect traffic from Tor user (avoid loops)
         vec!["-t", "nat", "-A", "TOR_REDIR_V6", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
         // Redirect non-local TCP traffic to Tor's transparent proxy port (9040) - separate rules for multiple destinations
