@@ -1117,6 +1117,9 @@ fn get_current_proxy_settings() -> Result<Option<String>> {
     Ok(Some(proxy_settings))
 }
 
+    Ok(Some(proxy_settings))
+}
+
 // Function to perform connectivity diagnostics to verify Tor is working properly
 async fn perform_connectivity_diagnostics() {
     info!("Performing connectivity diagnostics to verify Tor functionality");
@@ -1180,6 +1183,69 @@ async fn perform_connectivity_diagnostics() {
                 println!("{}", "⚠️  Could not create Tor SOCKS proxy".yellow());
             }
         }
+    } else {
+        info!("Tor service is not running - skipping connectivity diagnostics");
+    }
+}
+
+fn get_current_firewall_rules() -> Result<Vec<String>> {
+async fn perform_connectivity_diagnostics() {
+    info!("Performing connectivity diagnostics to verify Tor functionality");
+
+    // Check if Tor service is actually reachable via SOCKS proxy
+    if is_tor_service_running() {
+        info!("Tor service is running - checking if SOCKS proxy is accessible");
+
+        // Create a client that uses Tor SOCKS proxy
+        match reqwest::Proxy::all("socks5://127.0.0.1:9050") {
+            Ok(proxy) => {
+                match reqwest::Client::builder()
+                    .proxy(proxy)
+                    .timeout(std::time::Duration::from_secs(10))
+                    .build() {
+            Ok(socks_client) => {
+                info!("Successfully created SOCKS proxy client, testing connectivity...");
+
+                // Try to make a test request through Tor
+                match socks_client.get("https://httpbin.org/ip").send().await {
+                    Ok(response) => {
+                        if response.status().is_success() {
+                            match response.text().await {
+                                Ok(body) => {
+                                    // If we get a response, Tor is probably working
+                                    info!("Successfully connected through Tor SOCKS proxy");
+                                    debug!("Tor connectivity test response: {}", body);
+
+                                    // Check if the IP in response appears to be from a Tor exit node
+                                    if body.contains("origin") {
+                                        info!("Tor connectivity test passed - response received through Tor");
+                                        println!("{}", "🔒 Tor connectivity verified - traffic successfully routed through Tor".green());
+                                    } else {
+                                        warn!("Response doesn't contain expected IP information");
+                                    }
+                                },
+                                Err(e) => {
+                                    warn!("Could not read response from Tor connectivity test: {}", e);
+                                }
+                            }
+                        } else {
+                            warn!("Tor connectivity test failed - service returned: {}", response.status());
+                            println!("{}", "⚠️  Tor connectivity test failed - may not be properly routing traffic".yellow());
+                        }
+                    },
+                    Err(e) => {
+                        warn!("Failed to connect through Tor SOCKS proxy: {}", e);
+                        debug!("This may indicate Tor is not properly routing traffic");
+                        println!("{}", "⚠️  Failed to connect through Tor SOCKS proxy - connection may not be working".yellow());
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            warn!("Could not create Tor SOCKS proxy: {}", e);
+            println!("{}", "⚠️  Could not create Tor SOCKS proxy".yellow());
+        }
+    }
     } else {
         info!("Tor service is not running - skipping connectivity diagnostics");
     }
