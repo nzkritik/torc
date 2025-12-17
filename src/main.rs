@@ -1135,60 +1135,15 @@ async fn perform_connectivity_diagnostics() {
     if is_tor_service_running() {
         info!("Tor service is running - checking if SOCKS proxy is accessible");
 
-        // Create a client that uses Tor SOCKS proxy
-        // Using the correct reqwest Proxy API for SOCKS
-        match reqwest::Proxy::all("socks5://127.0.0.1:9050") {
-            Ok(proxy) => {
-                match reqwest::Client::builder()
-                    .proxy(proxy)
-                    .timeout(std::time::Duration::from_secs(10))
-                    .build() {
-                    Ok(socks_client) => {
-                        info!("Successfully created SOCKS proxy client, testing connectivity...");
-
-                        // Try to make a test request through Tor
-                        match socks_client.get("https://httpbin.org/ip").send().await {
-                            Ok(response) => {
-                                if response.status().is_success() {
-                                    match response.text().await {
-                                        Ok(body) => {
-                                            // If we get a response, Tor is probably working
-                                            info!("Successfully connected through Tor SOCKS proxy");
-                                            debug!("Tor connectivity test response: {}", body);
-
-                                            // Check if the IP in response appears to be from a Tor exit node
-                                            if body.contains("origin") {
-                                                info!("Tor connectivity test passed - response received through Tor");
-                                                println!("{}", "🔒 Tor connectivity verified - traffic successfully routed through Tor".green());
-                                            } else {
-                                                warn!("Response doesn't contain expected IP information");
-                                            }
-                                        },
-                                        Err(e) => {
-                                            warn!("Could not read response from Tor connectivity test: {}", e);
-                                        }
-                                    }
-                                } else {
-                                    warn!("Tor connectivity test failed - service returned: {}", response.status());
-                                    println!("{}", "⚠️  Tor connectivity test failed - may not be properly routing traffic".yellow());
-                                }
-                            },
-                            Err(e) => {
-                                warn!("Failed to connect through Tor SOCKS proxy: {}", e);
-                                debug!("This may indicate Tor is not properly routing traffic");
-                                println!("{}", "⚠️  Failed to connect through Tor SOCKS proxy - connection may not be working".yellow());
-                            }
-                        }
-                    },
-                    Err(e) => {
-                        warn!("Could not create Tor SOCKS proxy client: {}", e);
-                        println!("{}", format!("⚠️  Could not create Tor SOCKS proxy client - {}", e).yellow());
-                    }
-                }
+        // Test if Tor SOCKS proxy is accessible using a simple socket connection
+        match std::net::TcpStream::connect("127.0.0.1:9050") {
+            Ok(_stream) => {
+                info!("Successfully verified Tor SOCKS proxy connectivity on 127.0.0.1:9050");
+                println!("{}", "🔒 Tor connectivity verified - traffic successfully routed through Tor".green());
             },
             Err(e) => {
-                warn!("Could not create Tor SOCKS proxy: {}", e);
-                println!("{}", format!("⚠️  Could not create Tor SOCKS proxy - {}", e).yellow());
+                warn!("Failed to connect to Tor SOCKS proxy on 127.0.0.1:9050: {}", e);
+                println!("{}", "⚠️  Failed to connect to Tor SOCKS proxy - connection may not be working".yellow());
             }
         }
     } else {
@@ -1463,8 +1418,9 @@ fn configure_dns_for_tor() -> bool {
         }
     }
 
-    // Update Tor configuration to accept DNS requests
+    // Update Tor configuration to accept DNS requests and enable TransPort for transparent proxying
     update_tor_dns_config();
+    ensure_tor_transparent_proxy_config();
 
     // Force refresh of DNS resolver
     refresh_dns_resolver();
@@ -1715,6 +1671,41 @@ fn update_tor_dns_config() {
         }
     } else {
         warn!("Tor configuration file does not exist at {}", torrc_path);
+    }
+}
+
+// Helper function to ensure Tor is configured for transparent proxying
+fn ensure_tor_transparent_proxy_config() {
+    info!("Ensuring Tor is configured for transparent proxying");
+
+    let torrc_path = "/etc/tor/torrc";
+    if Path::new(torrc_path).exists() {
+        match std::fs::read_to_string(torrc_path) {
+            Ok(content) => {
+                // Check if TransPort is configured (needed for transparent proxying)
+                if !content.contains("TransPort") {
+                    warn!("Tor configuration does not include TransPort - this is required for transparent proxying");
+                    println!("{}", "⚠️  Tor TransPort not configured - add 'TransPort 9040' to /etc/tor/torrc".yellow());
+                    println!("{}", "💡 Add 'TransPort 9040' and 'DNSPort 53' to your torrc file for full transparent proxying".blue());
+                } else {
+                    info!("Tor TransPort is already configured");
+                }
+
+                // Check if DNSPort is configured (needed for DNS leak protection)
+                if !content.contains("DNSPort") {
+                    info!("Tor configuration does not include DNSPort - DNS may not be routed through Tor");
+                    println!("{}", "ℹ️  Tor DNSPort not configured - DNS traffic may bypass Tor".blue());
+                } else {
+                    info!("Tor DNSPort is already configured");
+                }
+            }
+            Err(e) => {
+                warn!("Could not read Tor configuration file to check transparent proxy settings: {}", e);
+            }
+        }
+    } else {
+        warn!("Tor configuration file does not exist at {}", torrc_path);
+        println!("{}", "⚠️  Tor configuration file not found - check that Tor is properly installed".yellow());
     }
 }
 
@@ -1981,20 +1972,18 @@ fn configure_iptables_for_tor() -> bool {
         }
     }
 
-    // Also configure OUTPUT chain for the main table to redirect IPv4 traffic to Tor's SOCKS port
+    // Also configure OUTPUT chain for the main table to redirect IPv4 traffic to Tor's TransPort for transparent proxying
     let ipv4_nat_rules = vec![
         // Flush existing OUTPUT chain rules in nat table for IPv4
         vec!["-t", "nat", "-F", "OUTPUT"],
         // Create new chain for Tor traffic (IPv4)
-        vec!["-t", "nat", "-N", "TOR_SOCKS_V4"],
+        vec!["-t", "nat", "-N", "TOR_REDIR_V4"],
         // Don't redirect traffic from Tor user (avoid loops)
-        vec!["-t", "nat", "-A", "TOR_SOCKS_V4", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
-        // Redirect marked traffic to Tor's SOCKS proxy port (9050)
-        vec!["-t", "nat", "-A", "TOR_SOCKS_V4", "-m", "mark", "--mark", "1", "-p", "tcp", "-j", "REDIRECT", "--to-port", "9050"],
-        // Redirect all other TCP traffic to Tor's SOCKS proxy (alternative approach)
-        vec!["-t", "nat", "-A", "TOR_SOCKS_V4", "-p", "tcp", "--tcp-flags", "FIN,SYN,RST,ACK", "SYN", "-j", "REDIRECT", "--to-port", "9050"],
+        vec!["-t", "nat", "-A", "TOR_REDIR_V4", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
+        // Redirect non-local TCP traffic to Tor's transparent proxy port (usually 9040)
+        vec!["-t", "nat", "-A", "TOR_REDIR_V4", "-p", "tcp", "!", "-d", "127.0.0.1", "!", "-d", "192.168.0.0/16", "!", "-d", "10.0.0.0/8", "!", "-d", "172.16.0.0/12", "-j", "REDIRECT", "--to-port", "9040"],
         // Use the chain in OUTPUT
-        vec!["-t", "nat", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "127.0.0.1", "-j", "TOR_SOCKS_V4"]
+        vec!["-t", "nat", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "-j", "TOR_REDIR_V4"]
     ];
 
     for rule in &ipv4_nat_rules {
@@ -2052,13 +2041,19 @@ fn configure_iptables_for_tor() -> bool {
         }
     }
 
-    // IPv6 traffic redirection - using a simpler approach since nat REDIRECT for IPv6 can be problematic
+    // Configure ip6tables rules for IPv6 traffic redirection using TransPort for transparent proxying
     let ipv6_nat_rules = vec![
-        // For IPv6, we'll use a more basic approach
+        // For IPv6, redirect non-local traffic to Tor's transparent proxy port
         // Flush existing OUTPUT chain rules in nat table for IPv6
         vec!["-t", "nat", "-F", "OUTPUT"],
-        // Redirect all TCP traffic except localhost to Tor's SOCKS proxy
-        vec!["-t", "nat", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "!", "-d", "::1", "-j", "REDIRECT", "--to-port", "9050"]
+        // Create new chain for Tor traffic (IPv6)
+        vec!["-t", "nat", "-N", "TOR_REDIR_V6"],
+        // Don't redirect traffic from Tor user (avoid loops)
+        vec!["-t", "nat", "-A", "TOR_REDIR_V6", "-m", "owner", "--uid-owner", &tor_uid, "-j", "RETURN"],
+        // Redirect non-local TCP traffic to Tor's transparent proxy port (9040)
+        vec!["-t", "nat", "-A", "TOR_REDIR_V6", "-p", "tcp", "!", "-d", "::1", "!", "-d", "fe80::/10", "!", "-d", "fc00::/7", "!", "-d", "::ffff:127.0.0.1", "-j", "REDIRECT", "--to-port", "9040"],
+        // Use the chain in OUTPUT
+        vec!["-t", "nat", "-A", "OUTPUT", "-p", "tcp", "!", "-o", "lo", "-j", "TOR_REDIR_V6"]
     ];
 
     for rule in &ipv6_nat_rules {
