@@ -865,14 +865,20 @@ async fn get_geo_location(ip: &str) -> Result<GeoIPInfo> {
     let client = reqwest::Client::new();
 
     // Try IP geolocation services in order of preference
-    let services = [
-        ("https://ipapi.co/{}/json/", vec!["country_name", "city", "region", "org"]),
-        ("https://ipinfo.io/{}/json", vec!["country", "city", "region", "org"])
+    let services = vec![
+        // ipapi.co format: country_name, city, region, org
+        ("https://ipapi.co/{}/json", "ipapi.co"),
+        // ipinfo.io format: country, city, region, org
+        ("https://ipinfo.io/{}/json", "ipinfo.io"),
+        // iplocation.net format: country_name, city, region_name, isp
+        ("https://api.iplocation.net/?ip={}", "iplocation.net"),
+        // Freegeoip format (if available): country_name, region_name, city, organization
+        ("https://freegeoip.app/json/{}", "freegeoip.app"),
     ];
 
-    for (i, (url_template, fields)) in services.iter().enumerate() {
+    for (i, (url_template, service_name)) in services.iter().enumerate() {
         let url = url_template.replace("{}", ip);
-        debug!("Trying geo location service #{}: {}", i + 1, url);
+        debug!("Trying geo location service #{} ({}) - URL: {}", i + 1, service_name, url);
 
         match client.get(&url).send().await {
             Ok(response) => {
@@ -880,14 +886,56 @@ async fn get_geo_location(ip: &str) -> Result<GeoIPInfo> {
                     match response.json::<serde_json::Value>().await {
                         Ok(geo_data) => {
                             debug!("Successfully retrieved geo data from {}", url);
-                            let country = geo_data.get(fields[0]).and_then(|v| v.as_str()).map(|s| s.to_string());
-                            let city = geo_data.get(fields[1]).and_then(|v| v.as_str()).map(|s| s.to_string());
-                            let region = geo_data.get(fields[2]).and_then(|v| v.as_str()).map(|s| s.to_string());
-                            let isp = geo_data.get(fields[3]).and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                            // Parse data based on service-specific field mappings
+                            let (country, city, region, isp) = match *service_name {
+                                "ipapi.co" => {
+                                    (
+                                        geo_data.get("country_name").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                        geo_data.get("city").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                        geo_data.get("region").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                        geo_data.get("org").and_then(|v| v.as_str()).map(|s| s.to_string())
+                                    )
+                                },
+                                "ipinfo.io" => {
+                                    (
+                                        geo_data.get("country").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                        geo_data.get("city").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                        geo_data.get("region").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                        geo_data.get("org").and_then(|v| v.as_str()).map(|s| s.to_string())
+                                    )
+                                },
+                                "iplocation.net" => {
+                                    (
+                                        geo_data.get("country_name").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                        geo_data.get("city").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                        geo_data.get("region_name").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                        geo_data.get("isp").and_then(|v| v.as_str()).map(|s| s.to_string())
+                                    )
+                                },
+                                "freegeoip.app" => {
+                                    (
+                                        geo_data.get("country_name").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                        geo_data.get("city").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                        geo_data.get("region_name").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                        geo_data.get("organization").and_then(|v| v.as_str()).map(|s| s.to_string())
+                                    )
+                                },
+                                _ => {
+                                    // Default to generic fields for any other services
+                                    (
+                                        geo_data.get("country").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                        geo_data.get("city").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                        geo_data.get("region").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                        geo_data.get("isp").and_then(|v| v.as_str()).map(|s| s.to_string())
+                                    )
+                                }
+                            };
 
                             if country.is_some() || city.is_some() || region.is_some() || isp.is_some() {
-                                info!("Successfully retrieved geo location for IP {}: country={}, city={}, region={}, isp={}",
+                                info!("Successfully retrieved geo location for IP {} from {}: country={}, city={}, region={}, isp={}",
                                       ip,
+                                      service_name,
                                       country.as_deref().unwrap_or("N/A"),
                                       city.as_deref().unwrap_or("N/A"),
                                       region.as_deref().unwrap_or("N/A"),
@@ -907,7 +955,7 @@ async fn get_geo_location(ip: &str) -> Result<GeoIPInfo> {
                         }
                     }
                 } else {
-                    debug!("Service {} returned non-success status: {}", url, response.status());
+                    debug!("Service {} ({}) returned non-success status: {}", url, service_name, response.status());
                 }
             }
             Err(e) => {

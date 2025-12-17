@@ -174,6 +174,7 @@ Currently targeting Arch-based and Debian-based Linux distributions with plans t
 - [x] Implement kill switch functionality to block all traffic if Tor connection drops
 - [x] Add system information display to main menu (OS, Host, Kernel)
 - [x] Implement proper iptables configuration to route all traffic through Tor transparently
+- [x] Improve IP geolocation API services with multiple fallbacks and proper format handling
 
 ### Testing & Quality
 - [ ] Add comprehensive unit tests for all functionality
