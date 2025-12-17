@@ -574,9 +574,9 @@ fn start_tor_service_with_delay() -> Result<()> {
         std::io::stdout().flush().unwrap();
     });
 
-    // Try to start the Tor service using systemctl
+    // Try to start the Tor service using systemctl in non-interactive mode
     let output = Command::new("sudo")
-        .args(&["systemctl", "start", "tor"])
+        .args(&["-n", "systemctl", "start", "tor"])
         .output()?;
 
     let result = if !output.status.success() {
@@ -584,12 +584,12 @@ fn start_tor_service_with_delay() -> Result<()> {
 
         // If systemctl fails, try enabling and then starting
         let output = Command::new("sudo")
-            .args(&["systemctl", "enable", "tor"])
+            .args(&["-n", "systemctl", "enable", "tor"])
             .output()?;
 
         if output.status.success() {
             let output = Command::new("sudo")
-                .args(&["systemctl", "start", "tor"])
+                .args(&["-n", "systemctl", "start", "tor"])
                 .output()?;
 
             if !output.status.success() {
@@ -714,7 +714,7 @@ fn check_additional_security_settings() {
 
 fn stop_tor_service() -> Result<()> {
     let output = Command::new("sudo")
-        .args(&["systemctl", "stop", "tor"])
+        .args(&["-n", "systemctl", "stop", "tor"])
         .output()?;
 
     if !output.status.success() {
@@ -2701,9 +2701,9 @@ fn restore_dns_config() -> bool {
     if is_systemd_resolved_running() {
         info!("Restoring systemd-resolved configuration");
 
-        // Try to reload systemd-resolved to apply original settings
+        // Try to reload systemd-resolved to apply original settings with non-interactive sudo
         let result = Command::new("sudo")
-            .args(&["systemctl", "reload-or-restart", "systemd-resolved"])
+            .args(&["-n", "systemctl", "reload-or-restart", "systemd-resolved"])
             .output();
 
         match result {
@@ -3084,9 +3084,9 @@ fn restore_dns_servers(servers: &[String]) -> Result<()> {
         // This is a best-effort approach as systemd-resolved configuration is complex
         println!("{}", "Using systemd-resolved, attempting to restore DNS...".yellow());
 
-        // Reset DNS configuration to defaults (this varies by system)
-        let _ = Command::new("systemctl")
-            .args(&["reload", "systemd-resolved"])
+        // Reset DNS configuration to defaults (this varies by system) with non-interactive sudo
+        let _ = Command::new("sudo")
+            .args(&["-n", "systemctl", "reload", "systemd-resolved"])
             .output();
     } else if !servers.is_empty() {
         // For traditional setup, restore /etc/resolv.conf
