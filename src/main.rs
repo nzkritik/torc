@@ -756,13 +756,14 @@ async fn get_external_ip() -> Result<Option<String>> {
     info!("Attempting to retrieve external IP address");
 
     // Check connection state before attempting to connect
-    let tor_status = if is_tor_service_running() { "connected" } else { "not connected" };
-    info!("Current Tor status: {}", tor_status);
-
-    if is_tor_service_running() {
+    let tor_connected = is_tor_service_running();
+    if tor_connected {
         info!("Tor is running - IP retrieval may go through Tor which could affect results");
-        // When connected to Tor, services may block requests or we may have network configuration issues
-        debug!("Connected to Tor - some IP services may block requests from exit nodes");
+        // When connected to Tor, trying to get external IP may not work correctly
+        // as the returned IP will be from a Tor exit node, not the real IP
+        debug!("Connected to Tor - IP retrieval will return exit node IP, not real IP");
+        warn!("Tor is connected - external IP retrieval may return exit node IP address instead of real IP");
+        println!("{}", "⚠️  Tor is connected - IP address shown will be from Tor exit node".yellow());
     } else {
         info!("Tor is not running - IP retrieval should return real public IP");
     }
@@ -793,6 +794,11 @@ async fn get_external_ip() -> Result<Option<String>> {
                             // Basic validation to ensure it's a valid IP
                             if is_valid_ip(&ip) {
                                 info!("Successfully retrieved external IP address: {} (via {})", ip, url);
+                                if tor_connected {
+                                    info!("IP is from Tor exit node (expected when using Tor): {}", ip);
+                                } else {
+                                    info!("IP is from direct connection (not Tor): {}", ip);
+                                }
                                 return Ok(Some(ip));
                             } else {
                                 debug!("Invalid IP format from {}: {}", url, ip);
@@ -808,7 +814,7 @@ async fn get_external_ip() -> Result<Option<String>> {
                     debug!("Service {} returned non-success status: {} (This may be expected when connected to Tor)", url, response.status());
                     // When connected to Tor, some services may block requests from exit nodes
                     // This is normal behavior and shouldn't be considered a complete failure when using Tor
-                    if is_tor_service_running() {
+                    if tor_connected {
                         debug!("Connected to Tor - some services block requests from exit nodes, continuing to next service...");
                     }
                     failed_attempts += 1;
@@ -826,9 +832,13 @@ async fn get_external_ip() -> Result<Option<String>> {
     debug!("IP retrieval stats - Successful: {}, Failed: {}, Total: {}",
            successful_attempts, failed_attempts, successful_attempts + failed_attempts);
 
-    if is_tor_service_running() {
+    if tor_connected {
         debug!("This may be expected when connected to Tor: exit nodes may block certain IP check services");
-        debug!("Consider using Tor browser or tools like 'curl --socks5-hostname 127.0.0.1:9050' to verify connection");
+        debug!("It's normal for some IP address services to be unreachable when using Tor");
+        println!("{}", "⚠️  Unable to retrieve exit node IP (this is normal when using Tor)".yellow());
+    } else {
+        debug!("Failed to retrieve public IP while not connected to Tor - this may indicate network issues");
+        println!("{}", "⚠️  Unable to retrieve public IP address - check internet connection".yellow());
     }
 
     Ok(None)
@@ -1177,7 +1187,7 @@ async fn perform_connectivity_diagnostics() {
             },
             Err(e) => {
                 warn!("Could not create Tor SOCKS proxy: {}", e);
-                println!("{}", "⚠️  Could not create Tor SOCKS proxy".yellow());
+                println!("{}", format!("⚠️  Could not create Tor SOCKS proxy - {}", e).yellow());
             }
         }
     } else {
