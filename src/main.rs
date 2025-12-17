@@ -1136,6 +1136,7 @@ async fn perform_connectivity_diagnostics() {
         info!("Tor service is running - checking if SOCKS proxy is accessible");
 
         // Create a client that uses Tor SOCKS proxy
+        // Using the correct reqwest Proxy API for SOCKS
         match reqwest::Proxy::all("socks5://127.0.0.1:9050") {
             Ok(proxy) => {
                 match reqwest::Client::builder()
@@ -1180,8 +1181,8 @@ async fn perform_connectivity_diagnostics() {
                         }
                     },
                     Err(e) => {
-                        warn!("Could not create SOCKS proxy client: {}", e);
-                        println!("{}", "⚠️  Could not create Tor SOCKS proxy connection".yellow());
+                        warn!("Could not create Tor SOCKS proxy client: {}", e);
+                        println!("{}", format!("⚠️  Could not create Tor SOCKS proxy client - {}", e).yellow());
                     }
                 }
             },
@@ -1723,11 +1724,11 @@ fn is_tor_dns_configured() -> bool {
     if Path::new(torrc_path).exists() {
         match std::fs::read_to_string(torrc_path) {
             Ok(content) => {
-                // Look for DNSPort directive
+                // Look for DNSPort directive (case-insensitive)
                 content.lines().any(|line| {
-                    let trimmed = line.trim();
-                    trimmed.starts_with("DNSPort") ||
-                    (trimmed.starts_with("SocksPort") && trimmed.contains("DNS"))
+                    let trimmed = line.trim().to_lowercase();
+                    trimmed.starts_with("dnsport") ||
+                    (trimmed.starts_with("socksport") && trimmed.contains("dns"))
                 })
             },
             Err(e) => {
@@ -1850,11 +1851,11 @@ fn check_tor_transparent_proxy_config() {
     if Path::new(torrc_path).exists() {
         match std::fs::read_to_string(torrc_path) {
             Ok(config) => {
-                // Look for HTTPTunnelPort directive
+                // Look for HTTPTunnelPort directive (case-insensitive)
                 let http_tunnel_exists = config.lines().any(|line| {
-                    let trimmed = line.trim();
-                    trimmed.starts_with("HTTPTunnelPort") ||
-                    trimmed.starts_with("SocksPort")
+                    let trimmed = line.trim().to_lowercase();
+                    trimmed.starts_with("httptunnelport") ||
+                    trimmed.starts_with("socksport")
                 });
 
                 if !http_tunnel_exists {
@@ -1866,11 +1867,11 @@ fn check_tor_transparent_proxy_config() {
                     info!("Tor HTTPTunnelPort is configured - HTTP tunneling available");
                 }
 
-                // Check for TransPort (transparent proxy port) configuration
+                // Check for TransPort (transparent proxy port) configuration (case-insensitive)
                 let trans_port_exists = config.lines().any(|line| {
-                    let trimmed = line.trim();
-                    trimmed.starts_with("TransPort") ||
-                    trimmed.starts_with("DNSPort")
+                    let trimmed = line.trim().to_lowercase();
+                    trimmed.starts_with("trans") ||
+                    trimmed.starts_with("dnsport")
                 });
 
                 if trans_port_exists {

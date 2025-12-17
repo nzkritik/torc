@@ -165,8 +165,9 @@ Currently targeting Arch-based and Debian-based Linux distributions with plans t
 - [ ] Add configuration file support for custom settings
 - [ ] Create desktop notification system for connection status changes
 - [ ] Add support for selecting specific Tor circuits or exit nodes
-- [ ] Implement kill switch functionality to block all traffic if Tor connection drops
+- [x] Implement kill switch functionality to block all traffic if Tor connection drops
 - [x] Add system information display to main menu (OS, Host, Kernel)
+- [x] Implement proper iptables configuration to route all traffic through Tor transparently
 
 ### Testing & Quality
 - [ ] Add comprehensive unit tests for all functionality
