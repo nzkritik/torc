@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex};
 use std::path::Path;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::fs;
-use std::time::SystemTime;
 use std::collections::VecDeque;
 use colored::*;
 use anyhow::{Result, bail};
@@ -28,9 +27,11 @@ struct BandwidthStats {
 // Data structure to store network connection information
 #[derive(Debug, Clone)]
 struct NetworkConnection {
+    #[allow(dead_code)]  // Protocol is stored for potential future use
     protocol: String,
     local_addr: String,
     remote_addr: String,
+    #[allow(dead_code)]  // State is stored for potential future use
     state: String,
 }
 
@@ -237,48 +238,6 @@ fn get_active_connections_details(max_count: usize) -> Vec<NetworkConnection> {
     }
 
     connections
-}
-
-// Function to get Tor-specific network information
-fn get_tor_network_info() -> Option<String> {
-    // Find Tor process and get its connections
-    if is_tor_service_running() {
-        // Get Tor's PID
-        let output = Command::new("pgrep")
-            .arg("tor")
-            .output();
-
-        if let Ok(output) = output {
-            if output.status.success() {
-                // Get connections associated with Tor's PID
-                let tor_pids_output = String::from_utf8_lossy(&output.stdout);
-                let tor_pids = tor_pids_output.trim();
-
-                if !tor_pids.is_empty() {
-                    let pid = tor_pids.lines().next().unwrap_or_default();
-
-                    // Get connections for this PID
-                    let conn_output = Command::new("sudo")
-                        .args(&["ss", "-tulnp", "-p", "pid", pid])
-                        .output();
-
-                    if let Ok(conn_output) = conn_output {
-                        if conn_output.status.success() {
-                            let conn_str = String::from_utf8_lossy(&conn_output.stdout);
-                            let lines: Vec<&str> = conn_str.lines().collect();
-
-                            // Count established connections
-                            let estab_count = lines.iter().filter(|line| line.contains("ESTAB")).count();
-
-                            return Some(format!("Tor process (PID {}) has {} ESTABLISHED connections", pid, estab_count));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    None
 }
 
 // Function to update bandwidth history
