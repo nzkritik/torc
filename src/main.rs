@@ -1834,7 +1834,7 @@ fn configure_dns_for_tor() -> bool {
 
     // Update Tor configuration to accept DNS requests and enable TransPort for transparent proxying
     update_tor_dns_config();
-    ensure_tor_transparent_proxy_config();
+    setup_tor_transparent_proxy();
 
     // Force refresh of DNS resolver
     refresh_dns_resolver();
@@ -2388,6 +2388,134 @@ fn restore_dns_config_to_original() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+// Function to check and configure Tor for transparent proxying with iptables
+fn setup_tor_transparent_proxy() {
+    info!("Setting up Tor transparent proxy configuration");
+
+    // Check if Tor is configured with TransPort for transparent proxying
+    let torrc_path = "/etc/tor/torrc";
+    if Path::new(torrc_path).exists() {
+        match std::fs::read_to_string(torrc_path) {
+            Ok(config) => {
+                let has_trans_port = config.lines().any(|line| {
+                    let trimmed = line.trim();
+                    trimmed.starts_with("TransPort") && !trimmed.starts_with('#')
+                });
+
+                if !has_trans_port {
+                    warn!("Tor TransPort is not configured in torrc - transparent proxying will be limited");
+                    println!("{}", "⚠️  Tor TransPort not configured - add 'TransPort 9040' to /etc/tor/torrc".yellow());
+
+                    // Try to automatically configure TransPort if running with sudo
+                    if let Ok(_) = std::env::var("SUDO_USER") {
+                        auto_add_transparent_proxy_config(torrc_path);
+                    }
+                } else {
+                    info!("Tor TransPort is already configured for transparent proxying");
+                }
+
+                // Also check for DNSPort
+                let has_dns_port = config.lines().any(|line| {
+                    let trimmed = line.trim();
+                    trimmed.starts_with("DNSPort") && !trimmed.starts_with('#')
+                });
+
+                if !has_dns_port {
+                    warn!("Tor DNSPort is not configured in torrc - DNS may leak outside Tor");
+                    println!("{}", "⚠️  Tor DNSPort not configured - add 'DNSPort 53' to prevent DNS leaks".yellow());
+
+                    if let Ok(_) = std::env::var("SUDO_USER") {
+                        auto_add_dns_config(torrc_path);
+                    }
+                } else {
+                    info!("Tor DNSPort is configured - DNS leak protection is active");
+                }
+            }
+            Err(e) => {
+                warn!("Cannot read Tor configuration file to check transparent proxy settings: {}", e);
+            }
+        }
+    } else {
+        warn!("Tor configuration file not found at {}", torrc_path);
+    }
+}
+
+// Helper function to auto-add transparent proxy config to torrc
+fn auto_add_transparent_proxy_config(torrc_path: &str) {
+    info!("Auto-configuring Tor for transparent proxying");
+
+    // Read the current config
+    match std::fs::read_to_string(torrc_path) {
+        Ok(config) => {
+            // Check if TransPort is already added to avoid duplicates
+            if !config.contains("TransPort") {
+                let mut new_config = config;
+                new_config.push_str("\n# Transparent proxy port for iptables redirect\nTransPort 9040\n");
+
+                // Write back to file with sudo
+                if let Ok(_) = write_config_with_sudo(torrc_path, &new_config) {
+                    info!("Tor TransPort configuration added successfully");
+                    println!("{}", "🔧 Tor TransPort configuration added to torrc".green());
+
+                    // Restart Tor to apply changes
+                    if restart_tor_service_with_sudo() {
+                        info!("Tor service restarted with transparent proxy configuration");
+                    } else {
+                        warn!("Failed to restart Tor service after configuration update");
+                        println!("{}", "⚠️  Could not restart Tor service - changes may not take effect".yellow());
+                    }
+                } else {
+                    println!("{}", "⚠️  Failed to update Tor configuration file - manual edit required".yellow());
+                }
+            }
+        }
+        Err(e) => {
+            warn!("Failed to read existing Tor config to add transparent proxy: {}", e);
+        }
+    }
+}
+
+// Helper function to auto-add DNS config to torrc
+fn auto_add_dns_config(torrc_path: &str) {
+    info!("Auto-configuring Tor for DNS leak protection");
+
+    // Read the current config
+    match std::fs::read_to_string(torrc_path) {
+        Ok(config) => {
+            // Check if DNSPort is already added to avoid duplicates
+            if !config.contains("DNSPort") {
+                let mut new_config = config;
+                new_config.push_str("\n# DNS port to prevent DNS leaks\nDNSPort 53\n");
+                new_config.push_str("# Automap hostnames to prevent DNS leaks\nAutomapHostsOnResolve 1\n");
+
+                // Write back to file with sudo
+                if let Ok(_) = write_config_with_sudo(torrc_path, &new_config) {
+                    info!("Tor DNS configuration added successfully");
+                    println!("{}", "🔧 Tor DNS configuration added to torrc".green());
+
+                    // Restart Tor to apply changes
+                    if restart_tor_service_with_sudo() {
+                        info!("Tor service restarted with DNS configuration");
+                    } else {
+                        warn!("Failed to restart Tor service after DNS configuration update");
+                        println!("{}", "⚠️  Could not restart Tor service - DNS changes may not take effect".yellow());
+                    }
+                } else {
+                    println!("{}", "⚠️  Failed to update Tor configuration file - manual edit required".yellow());
+                }
+            }
+        }
+        Err(e) => {
+            warn!("Failed to read existing Tor config to add DNS configuration: {}", e);
+        }
+    }
+}
+
+// Helper function for restarting Tor service with sudo
+fn restart_tor_service_with_sudo() -> bool {
+    restart_tor_service_helper()
 }
 
 // Helper function to refresh DNS resolver
@@ -3487,3 +3615,5 @@ fn restore_network_interfaces(interfaces: &[String]) -> Result<()> {
     // In a real implementation, would restore the actual network interface configurations
     Ok(())
 }
+
+// Helper function to write configuration file with sudo

@@ -140,7 +140,8 @@ Currently targeting Arch-based and Debian-based Linux distributions with plans t
 - [ ] Add proxy authentication support if needed
 
 ### Security & Privacy
-- [x] Implement proper cleanup of DNS cache on connection/disconnection
+- [x] Implement comprehensive DNS cache cleanup on connection/disconnection
+- [x] Implement automatic Tor configuration with TransPort and DNSPort for transparent proxying
 - [ ] Add support for Tor Browser integration
 - [ ] Implement MAC address spoofing for additional anonymity
 - [ ] Add detection for Tor blocking/interference
