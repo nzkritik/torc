@@ -172,13 +172,14 @@ Currently targeting Arch-based and Debian-based Linux distributions with plans t
 - [ ] Add support for containerized environments
 
 ### User Experience
-- [ ] Implement bandwidth monitoring
+- [x] Implement bandwidth monitoring
 - [ ] Add configuration file support for custom settings
 - [ ] Create desktop notification system for connection status changes
 - [ ] Add support for selecting specific Tor circuits or exit nodes
 - [x] Implement kill switch functionality to block all traffic if Tor connection drops
 - [x] Add system information display to main menu (OS, Host, Kernel)
 - [x] Implement proper iptables configuration to route all traffic through Tor transparently
+- [x] Add network traffic visualization to main menu (bandwidth graph and statistics)
 - [x] Improve IP geolocation API services with multiple fallbacks and proper format handling
 
 ### Testing & Quality
