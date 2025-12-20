@@ -668,32 +668,35 @@ async fn display_real_time_network_stats() -> Result<()> {
         print!("\x1B[J");
 
         // Display network statistics
-        println!("{}", "📊 Network Statistics:".cyan().bold());
+        print!("{}\n", "📊 Network Statistics:".cyan().bold());
 
-        // Show bandwidth graph
-        println!("{}", display_bandwidth_graph(20));
+        // Show bandwidth graph (each line individually to maintain alignment)
+        let graph_str = display_bandwidth_graph(20);
+        for line in graph_str.lines() {
+            print!("{}\n", line);
+        }
 
         // Get and display connection statistics
         match collect_network_stats() {
             Ok(stats) => {
-                println!("{}", format!("🔗 Active Connections: {}", stats.count).green());
-                println!("{}", format!("⚡ Avg Speed: {:.2} KB/s", stats.avg_speed / 1024.0).green());
+                print!("{}\n", format!("🔗 Active Connections: {}", stats.count).green());
+                print!("{}\n", format!("⚡ Avg Speed: {:.2} KB/s", stats.avg_speed / 1024.0).green());
 
                 // Show details of active connections (limit to first 3 for display)
                 if !stats.active_connections.is_empty() {
-                    println!("{}", "\n📡 Active Connections:".cyan());
+                    print!("{}\n", "\n📡 Active Connections:".cyan());
                     for conn in stats.active_connections.iter().take(3) {
-                        println!("{} ↔ {}", conn.local_addr.blue(), conn.remote_addr.yellow());
+                        print!("{} ↔ {}\n", conn.local_addr.blue(), conn.remote_addr.yellow());
                     }
                 }
             },
             Err(e) => {
-                println!("{}", format!("⚠️  Could not retrieve connection statistics: {}", e).yellow());
+                print!("{}\n", format!("⚠️  Could not retrieve connection statistics: {}", e).yellow());
             }
         }
 
         // Add some spacing
-        println!();
+        print!("\n");
 
         // Wait before next refresh
         std::thread::sleep(std::time::Duration::from_secs(2));
