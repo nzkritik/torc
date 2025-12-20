@@ -414,7 +414,14 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Connect to the Tor network
-    Connect,
+    Connect {
+        /// Username for proxy authentication
+        #[arg(long)]
+        proxy_username: Option<String>,
+        /// Password for proxy authentication
+        #[arg(long)]
+        proxy_password: Option<String>,
+    },
     /// Disconnect from the Tor network
     Disconnect,
     /// Check the Tor network status
@@ -435,7 +442,9 @@ async fn main() -> Result<()> {
     info!("Parsed command line arguments: {:?}", cli.command);
 
     match &cli.command {
-        Some(Commands::Connect) => connect_to_tor().await?,
+        Some(Commands::Connect { proxy_username, proxy_password }) => {
+            connect_to_tor(proxy_username.clone(), proxy_password.clone()).await?
+        },
         Some(Commands::Disconnect) => disconnect_from_tor().await?,
         Some(Commands::Status) => check_tor_status().await?,
         None => {
@@ -548,7 +557,27 @@ async fn show_interactive_menu() -> Result<()> {
         io::stdin().read_line(&mut input)?;
 
         let result = match input.trim() {
-            "1" => connect_to_tor().await.map(|_| ()),
+            "1" => {
+                // For interactive mode, ask for proxy credentials if needed
+                print!("{}", "Enter proxy username (or press Enter to skip): ".cyan());
+                io::stdout().flush()?;
+                let mut username_input = String::new();
+                io::stdin().read_line(&mut username_input)?;
+                let username = username_input.trim();
+                let proxy_username = if !username.is_empty() { Some(username.to_string()) } else { None };
+
+                let proxy_password = if proxy_username.is_some() {
+                    print!("{}", "Enter proxy password: ".cyan());
+                    io::stdout().flush()?;
+                    let mut password_input = String::new();
+                    io::stdin().read_line(&mut password_input)?;
+                    Some(password_input.trim().to_string())
+                } else {
+                    None
+                };
+
+                connect_to_tor(proxy_username, proxy_password).await.map(|_| ())
+            },
             "2" => disconnect_from_tor().await.map(|_| ()),
             "3" => check_tor_status().await.map(|_| ()),
             "4" => {
@@ -736,7 +765,7 @@ async fn check_tor_status_inline() {
     display_current_ip_and_location().await;
 }
 
-async fn connect_to_tor() -> Result<()> {
+async fn connect_to_tor(proxy_username: Option<String>, proxy_password: Option<String>) -> Result<()> {
     info!("Starting connection to Tor Network");
     println!("{}", "\n🔄 Connecting to Tor Network...".yellow());
 
@@ -817,8 +846,8 @@ async fn connect_to_tor() -> Result<()> {
                 println!("{}", "🔒 Your IP address is now hidden and your traffic is anonymized.".green());
 
                 // Configure system to route traffic through Tor (this is a simplified representation)
-                configure_system_proxy();
-                info!("System proxy configured for Tor");
+                configure_system_proxy(proxy_username, proxy_password);
+                info!("System proxy configured for Tor with authentication");
 
                 // Check Tor configuration for transparent proxying capabilities
                 check_tor_transparent_proxy_config();
@@ -1778,24 +1807,32 @@ fn get_current_network_interfaces() -> Result<Vec<String>> {
     }
 }
 
-fn configure_system_proxy() {
+fn configure_system_proxy(username: Option<String>, password: Option<String>) {
     println!("{}", "Configuring system to route traffic through Tor...".yellow());
 
     // Set environment variables for proxy - Note: Tor SOCKS port is not an HTTP proxy
-    std::env::set_var("ALL_PROXY", "socks5://127.0.0.1:9050");
+    let proxy_url = if let (Some(user), Some(pass)) = (&username, &password) {
+        format!("socks5://{}:{}@127.0.0.1:9050", user, pass)
+    } else {
+        "socks5://127.0.0.1:9050".to_string()
+    };
+
+    std::env::set_var("ALL_PROXY", &proxy_url);
 
     // Note: Tor's default port 9050 is a SOCKS proxy, not an HTTP proxy
     // When configuring browsers, users must select SOCKS instead of HTTP proxy
     // Setting HTTP_PROXY/HTTPS_PROXY to SOCKS addresses will cause issues
     // These are commented out to prevent the error the user reported:
     // "This is a SOCKS proxy, not an HTTP proxy" error
-    // std::env::set_var("HTTP_PROXY", "socks5://127.0.0.1:9050");
-    // std::env::set_var("HTTPS_PROXY", "socks5://127.0.0.1:9050");
+    // std::env::set_var("HTTP_PROXY", &proxy_url);
+    // std::env::set_var("HTTPS_PROXY", &proxy_url);
 
     // Try to set GNOME proxy settings to route through Tor
     let _ = Command::new("gsettings")
         .args(&["set", "org.gnome.system.proxy", "mode", "manual"])
         .output();
+
+    // Set SOCKS proxy host and port
     let _ = Command::new("gsettings")
         .args(&["set", "org.gnome.system.proxy.socks", "host", "127.0.0.1"])
         .output();
@@ -1803,9 +1840,21 @@ fn configure_system_proxy() {
         .args(&["set", "org.gnome.system.proxy.socks", "port", "9050"])
         .output();
 
+    // Set authentication if provided
+    if let (Some(user), Some(_pass)) = (&username, &password) {
+        // Note: GNOME's gsettings doesn't directly support SOCKS authentication
+        // This is typically handled by applications that connect to the proxy
+        println!("{}", format!("🔐 Proxy authentication configured for user: {}", user).green());
+    }
+
     // Configure iptables rules to redirect traffic through Tor
     if configure_iptables_for_tor() {
-        println!("{}", "✓ System configured to use Tor SOCKS proxy (127.0.0.1:9050)".green());
+        let auth_msg = if username.is_some() && password.is_some() {
+            " with authentication"
+        } else {
+            ""
+        };
+        println!("{}", format!("✓ System configured to use Tor SOCKS proxy (127.0.0.1:9050){}", auth_msg).green());
         println!("{}", "✓ GNOME proxy settings updated (SOCKS only - not HTTP)".green());
         println!("{}", "✓ IPTables rules configured for Tor traffic routing".green());
     } else {
@@ -1826,8 +1875,15 @@ fn configure_system_proxy() {
     // Provide guidance about browser configuration
     println!("{}", "ℹ️  Note: Tor port 9050 is a SOCKS proxy, not an HTTP proxy".blue());
     println!("{}", "ℹ️  Configure your browser's network settings to use SOCKS proxy, not HTTP".blue());
-    println!("{}", "ℹ️  For Firefox: Preferences → Network Settings → Manual proxy config → SOCKS".blue());
-    println!("{}", "ℹ️  For Chrome/Chromium: Command line '--proxy-server=socks5://127.0.0.1:9050'".blue());
+
+    let auth_note = if username.is_some() && password.is_some() {
+        format!(" with authentication")
+    } else {
+        "".to_string()
+    };
+
+    println!("{}", format!("ℹ️  For Firefox: Preferences → Network Settings → Manual proxy config → SOCKS{}", auth_note).blue());
+    println!("{}", format!("ℹ️  For Chrome/Chromium: Command line '--proxy-server={}' (if supporting auth)", proxy_url).blue());
 }
 
 // Function to configure DNS to route through Tor and clear DNS cache

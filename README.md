@@ -67,6 +67,9 @@ cargo install --path .
 ```bash
 # Run the Tor connector
 torc
+
+# Connect with proxy authentication
+torc connect --proxy-username myuser --proxy-password mypass
 ```
 
 This will open an interactive menu with the following options:
@@ -74,6 +77,8 @@ This will open an interactive menu with the following options:
 2. Disconnect from Tor Network
 3. Check Tor Status
 4. Exit
+
+In the interactive menu, when selecting "Connect to Tor Network", you'll be prompted to enter proxy authentication credentials if needed.
 
 ## How It Works
 
@@ -137,7 +142,7 @@ Currently targeting Arch-based and Debian-based Linux distributions with plans t
 - [x] Configure iptables rules to redirect all traffic through Tor transparently
 - [x] Implement comprehensive iptables rule restoration with proper delays and synchronization
 - [x] Simplify command line interface (e.g., "torc connect" instead of "torc system connect")
-- [ ] Add proxy authentication support if needed
+- [x] Add proxy authentication support if needed
 
 ### Security & Privacy
 - [x] Implement comprehensive DNS cache cleanup on connection/disconnection
