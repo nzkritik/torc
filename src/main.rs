@@ -16,6 +16,10 @@ use tokio;
 use log::{debug, error, info, warn};
 use env_logger::Builder;
 use chrono::Local;
+use crossterm::{
+    event::{self, Event, KeyCode, KeyEvent},
+    terminal::{disable_raw_mode, enable_raw_mode},
+};
 // Data structure to store bandwidth statistics
 #[derive(Debug, Clone)]
 struct BandwidthStats {
@@ -541,7 +545,8 @@ async fn show_interactive_menu() -> Result<()> {
             "1" => connect_to_tor().await.map(|_| ()),
             "2" => disconnect_from_tor().await.map(|_| ()),
             "3" => check_tor_status().await.map(|_| ()),
-            "4" => {
+            "4" => display_real_time_network_stats().await.map(|_| ()),
+            "5" => {
                 println!("{}", "Exiting TORC. Your system is no longer connected to Tor.".yellow());
                 break;
             },
@@ -585,7 +590,8 @@ async fn show_menu() {
     println!("{}", "1. 🔗 Connect to Tor Network".cyan());
     println!("{}", "2. ❌ Disconnect from Tor Network".red());
     println!("{}", "3. 🔍 Check Tor Status".yellow());
-    println!("{}", "4. 🚪 Exit".magenta());
+    println!("{}", "4. 📊 View Real-time Network Stats".cyan());
+    println!("{}", "5. 🚪 Exit".magenta());
 
     println!("{}", "\nCurrent Status:".bold());
     check_tor_status_inline().await;
@@ -625,6 +631,88 @@ fn display_network_statistics() {
     }
 
     println!();
+}
+
+// Function to display real-time network statistics with auto-refresh until ESC is pressed
+async fn display_real_time_network_stats() -> Result<()> {
+    // Enable raw mode for keyboard input
+    enable_raw_mode()?;
+
+    // Clear the screen and set up the initial display
+    print!("\x1B[2J\x1B[1;1H");  // Clear screen
+    println!("{}", "TORC - Real-time Network Statistics".green().bold());
+    println!("{}", "Press ESC to return to main menu".yellow());
+    println!("{}", "=".repeat(60).cyan());
+
+    // Atomic flag to control the refresh loop
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+
+    // Spawn a thread to handle keyboard input
+    let input_thread = std::thread::spawn(move || {
+        loop {
+            if event::poll(std::time::Duration::from_millis(100)).unwrap() {
+                if let Event::Key(KeyEvent { code: KeyCode::Esc, .. }) = event::read().unwrap() {
+                    r.store(false, Ordering::SeqCst);
+                    break;
+                }
+            }
+        }
+    });
+
+    // Main refresh loop
+    while running.load(Ordering::SeqCst) {
+        // Update bandwidth history
+        update_bandwidth_history();
+
+        // Move cursor to top of the stats area (after the header)
+        print!("\x1B[4;1H");  // Move to line 4, column 1
+
+        // Clear the area where stats will be displayed (clear from cursor to end of screen)
+        print!("\x1B[J");
+
+        // Display network statistics
+        println!("{}", "📊 Network Statistics:".cyan().bold());
+
+        // Show bandwidth graph
+        println!("{}", display_bandwidth_graph(20));
+
+        // Get and display connection statistics
+        match collect_network_stats() {
+            Ok(stats) => {
+                println!("{}", format!("🔗 Active Connections: {}", stats.count).green());
+                println!("{}", format!("⚡ Avg Speed: {:.2} KB/s", stats.avg_speed / 1024.0).green());
+
+                // Show details of active connections (limit to first 3 for display)
+                if !stats.active_connections.is_empty() {
+                    println!("{}", "\n📡 Active Connections:".cyan());
+                    for conn in stats.active_connections.iter().take(3) {
+                        println!("  {} ↔ {}", conn.local_addr.blue(), conn.remote_addr.yellow());
+                    }
+                }
+            },
+            Err(e) => {
+                println!("{}", format!("⚠️  Could not retrieve connection statistics: {}", e).yellow());
+            }
+        }
+
+        // Add some spacing
+        println!();
+
+        // Wait before next refresh
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+
+    // Wait for input thread to finish
+    input_thread.join().unwrap();
+
+    // Disable raw mode
+    disable_raw_mode()?;
+
+    // Clear the screen and return to main menu
+    print!("\x1B[2J\x1B[1;1H");  // Clear screen
+
+    Ok(())
 }
 
 async fn check_tor_status_inline() {
