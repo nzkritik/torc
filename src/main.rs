@@ -20,6 +20,7 @@ use crossterm::{
     event::{self, Event, KeyCode, KeyEvent},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
+/*
 // Data structure to store bandwidth statistics
 #[derive(Debug, Clone)]
 struct BandwidthStats {
@@ -49,7 +50,9 @@ struct ConnectionStats {
 
 // Global variable to store recent bandwidth measurements
 static BANDWIDTH_HISTORY: LazyLock<Mutex<VecDeque<BandwidthStats>>> = LazyLock::new(|| Mutex::new(VecDeque::new()));
+*/
 
+/*
 // Collect network statistics including bandwidth and connections
 fn collect_network_stats() -> Result<ConnectionStats> {
     // For now, we'll implement a basic version that provides mock data
@@ -348,6 +351,7 @@ fn display_bandwidth_graph(width: usize) -> String {
 
     graph_lines.join("\n")
 }
+*/
 
 // Initialize logging system
 fn init_logger() {
@@ -545,8 +549,7 @@ async fn show_interactive_menu() -> Result<()> {
             "1" => connect_to_tor().await.map(|_| ()),
             "2" => disconnect_from_tor().await.map(|_| ()),
             "3" => check_tor_status().await.map(|_| ()),
-            "4" => display_real_time_network_stats().await.map(|_| ()),
-            "5" => {
+            "4" => {
                 println!("{}", "Exiting TORC. Your system is no longer connected to Tor.".yellow());
                 break;
             },
@@ -590,8 +593,7 @@ async fn show_menu() {
     println!("{}", "1. 🔗 Connect to Tor Network".cyan());
     println!("{}", "2. ❌ Disconnect from Tor Network".red());
     println!("{}", "3. 🔍 Check Tor Status".yellow());
-    println!("{}", "4. 📊 View Real-time Network Stats".cyan());
-    println!("{}", "5. 🚪 Exit".magenta());
+    println!("{}", "4. 🚪 Exit".magenta());
 
     println!("{}", "\nCurrent Status:".bold());
     check_tor_status_inline().await;
@@ -601,6 +603,7 @@ async fn show_menu() {
 }
 
 // Function to display network statistics and bandwidth visualization
+/*
 fn display_network_statistics() {
     println!("{}", "\n📊 Network Statistics:".cyan().bold());
 
@@ -628,7 +631,9 @@ fn display_network_statistics() {
 
     println!();
 }
+*/
 
+/*
 // Function to display real-time network statistics with auto-refresh until ESC is pressed
 async fn display_real_time_network_stats() -> Result<()> {
     // Enable raw mode for keyboard input
@@ -713,6 +718,7 @@ async fn display_real_time_network_stats() -> Result<()> {
 
     Ok(())
 }
+*/
 
 async fn check_tor_status_inline() {
     // Check if Tor service is running
