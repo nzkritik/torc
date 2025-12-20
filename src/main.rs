@@ -683,7 +683,7 @@ async fn display_real_time_network_stats() -> Result<()> {
                 if !stats.active_connections.is_empty() {
                     println!("{}", "\n📡 Active Connections:".cyan());
                     for conn in stats.active_connections.iter().take(3) {
-                        println!("  {} ↔ {}", conn.local_addr.blue(), conn.remote_addr.yellow());
+                        println!("{} ↔ {}", conn.local_addr.blue(), conn.remote_addr.yellow());
                     }
                 }
             },
