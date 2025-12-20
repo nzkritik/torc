@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::path::Path;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::fs;
-use std::collections::VecDeque;
+// use std::collections::VecDeque;  // Commented out due to being unused after removing network stats
 use colored::*;
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
@@ -16,10 +16,12 @@ use tokio;
 use log::{debug, error, info, warn};
 use env_logger::Builder;
 use chrono::Local;
+/*
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
+*/
 /*
 // Data structure to store bandwidth statistics
 #[derive(Debug, Clone)]
@@ -2306,6 +2308,7 @@ fn update_tor_dns_config() {
 }
 
 // Helper function to ensure Tor is configured for transparent proxying
+/*
 fn ensure_tor_transparent_proxy_config() {
     info!("Ensuring Tor is configured for transparent proxying");
 
@@ -2339,6 +2342,7 @@ fn ensure_tor_transparent_proxy_config() {
         println!("{}", "⚠️  Tor configuration file not found - check that Tor is properly installed".yellow());
     }
 }
+*/
 
 // Helper function to check if Tor is configured to handle DNS
 fn is_tor_dns_configured() -> bool {
