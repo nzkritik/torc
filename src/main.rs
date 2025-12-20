@@ -333,7 +333,7 @@ fn display_bandwidth_graph(width: usize) -> String {
     for (i, &val) in normalized_values.iter().enumerate().take(5) {  // Show last 5 samples
         let bar_size = val as usize;
         let bar: String = "█".repeat(bar_size.min(width));
-        let padding = " ".repeat(width.saturating_sub(bar_size));
+        let _padding = " ".repeat(width.saturating_sub(bar_size));
 
         // Add the value label
         let sample_index = i + bandwidth_values.len().saturating_sub(5);
@@ -343,7 +343,7 @@ fn display_bandwidth_graph(width: usize) -> String {
             0.0
         };
         let label = format!(" {:.2}kbps", label_val);
-        graph_lines.push(format!("{}{}{}", bar, padding, label));
+        graph_lines.push(format!("{}{}", bar, label));
     }
 
     graph_lines.join("\n")
@@ -596,10 +596,6 @@ async fn show_menu() {
     println!("{}", "\nCurrent Status:".bold());
     check_tor_status_inline().await;
 
-    // Update bandwidth history and display network statistics
-    update_bandwidth_history();
-    display_network_statistics();
-
     println!("{}", "\n[INFO] This application routes all web traffic through the Tor network".yellow());
     println!("{}", "[CAUTION] Tor may slow down your connection and some websites may block Tor users".red());
 }
@@ -621,7 +617,7 @@ fn display_network_statistics() {
             if !stats.active_connections.is_empty() {
                 println!("{}", "\n📡 Active Connections:".cyan());
                 for conn in stats.active_connections.iter().take(3) {
-                    println!("  {} ↔ {}", conn.local_addr.blue(), conn.remote_addr.yellow());
+                    println!("{} ↔ {}", conn.local_addr.blue(), conn.remote_addr.yellow());
                 }
             }
         },
