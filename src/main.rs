@@ -845,6 +845,15 @@ async fn connect_to_tor(proxy_username: Option<String>, proxy_password: Option<S
                 println!("{}", "\nTor connection established! All web traffic is now routed through Tor.".green());
                 println!("{}", "🔒 Your IP address is now hidden and your traffic is anonymized.".green());
 
+                // Disable IPv6 to prevent IPv6 leaks while using Tor
+                if disable_ipv6() {
+                    info!("IPv6 disabled for Tor session");
+                    println!("{}", "✓ IPv6 disabled to prevent IPv6 leaks".green());
+                } else {
+                    warn!("Could not disable IPv6 - IPv6 traffic may bypass Tor");
+                    println!("{}", "⚠️  Could not disable IPv6 - IPv6 traffic may bypass Tor".yellow());
+                }
+
                 // Configure system to route traffic through Tor (this is a simplified representation)
                 configure_system_proxy(proxy_username, proxy_password);
                 info!("System proxy configured for Tor with authentication");
@@ -886,6 +895,16 @@ async fn disconnect_from_tor() -> Result<()> {
     match stop_tor_service() {
         Ok(_) => {
             info!("Tor service stopped successfully");
+
+            // Re-enable IPv6 now that Tor is stopped
+            if enable_ipv6() {
+                info!("IPv6 re-enabled after Tor session");
+                println!("{}", "✓ IPv6 re-enabled".green());
+            } else {
+                warn!("Could not re-enable IPv6 after Tor session");
+                println!("{}", "⚠️  Could not re-enable IPv6 - please run: sudo sysctl -w net.ipv6.conf.all.disable_ipv6=0".yellow());
+            }
+
             // Restore system state from backup if available
             if let Err(e) = restore_system_state_if_needed() {
                 warn!("Could not restore system state: {}", e);
@@ -3767,6 +3786,78 @@ fn restore_network_interfaces(interfaces: &[String]) -> Result<()> {
 
     // In a real implementation, would restore the actual network interface configurations
     Ok(())
+}
+
+// Disable IPv6 system-wide via sysctl to prevent IPv6 leaks while using Tor
+fn disable_ipv6() -> bool {
+    info!("Disabling IPv6 to prevent leaks during Tor session");
+
+    let commands = [
+        ("net.ipv6.conf.all.disable_ipv6", "1"),
+        ("net.ipv6.conf.default.disable_ipv6", "1"),
+        ("net.ipv6.conf.lo.disable_ipv6", "1"),
+    ];
+
+    let mut success = true;
+    for (key, value) in &commands {
+        let param = format!("{}={}", key, value);
+        match Command::new("sudo")
+            .args(&["-n", "sysctl", "-w", &param])
+            .output()
+        {
+            Ok(output) => {
+                if !output.status.success() {
+                    warn!("Failed to set {}: {}", param, String::from_utf8_lossy(&output.stderr));
+                    success = false;
+                } else {
+                    debug!("Set {}", param);
+                }
+            }
+            Err(e) => {
+                warn!("Failed to run sysctl for {}: {}", param, e);
+                success = false;
+            }
+        }
+    }
+
+    info!("IPv6 disable completed with success: {}", success);
+    success
+}
+
+// Re-enable IPv6 system-wide via sysctl after a Tor session ends
+fn enable_ipv6() -> bool {
+    info!("Re-enabling IPv6 after Tor session");
+
+    let commands = [
+        ("net.ipv6.conf.all.disable_ipv6", "0"),
+        ("net.ipv6.conf.default.disable_ipv6", "0"),
+        ("net.ipv6.conf.lo.disable_ipv6", "0"),
+    ];
+
+    let mut success = true;
+    for (key, value) in &commands {
+        let param = format!("{}={}", key, value);
+        match Command::new("sudo")
+            .args(&["-n", "sysctl", "-w", &param])
+            .output()
+        {
+            Ok(output) => {
+                if !output.status.success() {
+                    warn!("Failed to set {}: {}", param, String::from_utf8_lossy(&output.stderr));
+                    success = false;
+                } else {
+                    debug!("Set {}", param);
+                }
+            }
+            Err(e) => {
+                warn!("Failed to run sysctl for {}: {}", param, e);
+                success = false;
+            }
+        }
+    }
+
+    info!("IPv6 enable completed with success: {}", success);
+    success
 }
 
 // Helper function to write configuration file with sudo
