@@ -147,6 +147,7 @@ Currently targeting Arch-based and Debian-based Linux distributions with plans t
 ### Security & Privacy
 - [x] Implement comprehensive DNS cache cleanup on connection/disconnection
 - [x] Implement automatic Tor configuration with TransPort and DNSPort for transparent proxying
+- [x] exclude IPv6 during connection to prevent leaks.
 - [ ] Add support for Tor Browser integration
 - [ ] Implement MAC address spoofing for additional anonymity
 - [ ] Add detection for Tor blocking/interference
