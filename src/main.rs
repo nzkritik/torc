@@ -4,7 +4,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::path::Path;
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::fs;
 // use std::collections::VecDeque;  // Commented out due to being unused after removing network stats
 use colored::*;
@@ -1242,7 +1242,10 @@ fn is_tor_installed() -> bool {
 
 // Function to get the current external IP address
 async fn get_external_ip() -> Result<Option<String>> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(3))
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
     info!("Attempting to retrieve external IP address");
 
     // Check connection state before attempting to connect
@@ -1350,10 +1353,33 @@ fn is_valid_ip(ip_str: &str) -> bool {
     false
 }
 
+// Function to check if an IP is a safe, routable public address (not private/loopback/link-local/etc.)
+// Used before sending the IP to third-party geo-location APIs, to avoid leaking internal network
+// topology when get_external_ip() returns an unexpected private address.
+fn is_safe_public_ip(ip_str: &str) -> bool {
+    match ip_str.parse::<IpAddr>() {
+        Ok(IpAddr::V4(ipv4)) => {
+            !ipv4.is_private()
+                && !ipv4.is_loopback()
+                && !ipv4.is_link_local()
+                && !ipv4.is_multicast()
+                && !ipv4.is_unspecified()
+                && !ipv4.is_broadcast()
+        }
+        Ok(IpAddr::V6(ipv6)) => {
+            !ipv6.is_loopback() && !ipv6.is_multicast() && !ipv6.is_unspecified()
+        }
+        Err(_) => false,
+    }
+}
+
 // Function to get geo location information for an IP
 async fn get_geo_location(ip: &str) -> Result<GeoIPInfo> {
     info!("Attempting to retrieve geo location for IP: {}", ip);
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(3))
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
 
     // Try IP geolocation services in order of preference
     let services = vec![
@@ -1497,6 +1523,14 @@ async fn display_current_ip_and_location() {
     match get_external_ip().await {
         Ok(Some(ip)) => {
             println!("{}", "✓".green());
+
+            if !is_safe_public_ip(&ip) {
+                warn!("get_external_ip() returned a non-public IP address, skipping geo location lookup: {}", ip);
+                println!("  📡 Your public IP: {}", ip.yellow().bold());
+                println!("     {}", "⚠️  Location lookup skipped (non-public IP address)".yellow());
+                return;
+            }
+
             print!("{}", "🌍 Getting location info... ".cyan());
             std::io::stdout().flush().unwrap();
 
