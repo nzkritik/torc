@@ -46,6 +46,8 @@ cargo build --release
 echo "Installing torc binary to $INSTALL_PATH..."
 sudo install -Dm755 target/release/torc "$INSTALL_PATH"
 
+CARGO_VERSION="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+COMMIT="$(git rev-parse --short HEAD)"
+
 echo ""
-echo "Update complete!"
-"$INSTALL_PATH" --version || true
+echo "Update complete! Installed torc $CARGO_VERSION (commit $COMMIT) to $INSTALL_PATH"
